@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Группы: {{ contest.name }} — Synaqmaker Resolver{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-people"></i> Группы: {{ contest.name }}</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('presentation', olympiad_id=olympiad_id) }}" class="btn btn-primary" target="_blank">
+            <i class="bi bi-display"></i> Разморозка
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> {{ t('back') }}
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">
+                <i class="bi bi-people-fill"></i> Управление группами
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Создайте группы участников для проведения разморозки по отдельным группам (классы, школы и т.д.).</p>
+                
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="new-group-name" placeholder="Название группы">
+                        <button class="btn btn-outline-success" onclick="addGroup()">
+                            <i class="bi bi-plus-circle"></i> Создать группу
+                        </button>
+                    </div>
+                </div>
+
+                <button class="btn btn-outline-info btn-sm mb-3" onclick="autoGroupByOrg()">
+                    <i class="bi bi-magic"></i> Автоматически по организации
+                </button>
+
+                <div id="groups-container"></div>
+
+                <hr>
+                <button class="btn btn-success" onclick="saveGroups()">
+                    <i class="bi bi-save"></i> {{ t('save') }}
+                </button>
+                <span id="save-status" class="ms-2 text-muted small"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <i class="bi bi-info-circle"></i> Подсказка
+            </div>
+            <div class="card-body small">
+                <p>Группы позволяют проводить отдельные разморозки для разных категорий участников.</p>
+                <p>Перетаскивайте участников в группы или используйте автоматическую группировку по организации.</p>
+                <p>Для открытия разморозки по группе, используйте ссылку: <code>/presentation/ID?group=Название</code></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const olympiadId = {{ olympiad_id|tojson }};
+let allParticipants = [];
+let groups = {};
+
+async function loadData() {
+    try {
+        const resp = await fetch(`/api/contest/${olympiadId}/participants_for_grouping`);
+        const data = await resp.json();
+        if (data.ok) {
+            allParticipants = data.participants || [];
+            groups = data.groups || {};
+            renderGroups();
+        }
+    } catch(e) {
+        console.error('Load error:', e);
+    }
+}
+
+function renderGroups() {
+    const container = document.getElementById('groups-container');
+    container.innerHTML = '';
+    
+    const assignedIds = new Set();
+    Object.values(groups).forEach(ids => ids.forEach(id => assignedIds.add(id)));
+
+    // Render each group
+    for (const [gName, memberIds] of Object.entries(groups)) {
+        const card = document.createElement('div');
+        card.className = 'card mb-2';
+        
+        let membersHtml = '';
+        memberIds.forEach(pid => {
+            const p = allParticipants.find(x => x.id === pid);
+            const name = p ? escapeHtml(p.nickname) : pid;
+            const org = p && p.organization ? `<small class="text-muted">(${escapeHtml(p.organization)})</small>` : '';
+            membersHtml += `<span class="badge bg-light text-dark border me-1 mb-1">${name} ${org}
+                <button class="btn-close btn-close-sm ms-1" style="font-size:0.6em" onclick="removeMember('${escapeHtml(gName)}','${escapeHtml(pid)}')"></button>
+            </span>`;
+        });
+
+        card.innerHTML = `
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <strong><i class="bi bi-tag"></i> ${escapeHtml(gName)}</strong>
+                <div>
+                    <span class="badge bg-info me-2">${memberIds.length} чел.</span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteGroup('${escapeHtml(gName)}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body py-2">
+                ${membersHtml || '<em class="text-muted">Пусто</em>'}
+                <hr class="my-2">
+                <select class="form-select form-select-sm" onchange="addMemberToGroup('${escapeHtml(gName)}', this.value); this.value='';">
+                    <option value="">+ Добавить участника...</option>
+                    ${allParticipants.filter(p => !assignedIds.has(p.id) || memberIds.includes(p.id) === false)
+                        .map(p => `<option value="${p.id}">${escapeHtml(p.nickname)} ${p.organization ? '(' + escapeHtml(p.organization) + ')' : ''}</option>`).join('')}
+                </select>
+            </div>`;
+        container.appendChild(card);
+    }
+
+    // Unassigned participants
+    const unassigned = allParticipants.filter(p => !assignedIds.has(p.id));
+    if (unassigned.length > 0) {
+        const div = document.createElement('div');
+        div.className = 'alert alert-light mt-3';
+        div.innerHTML = `<strong>Без группы (${unassigned.length}):</strong><br>` + 
+            unassigned.map(p => `<span class="badge bg-secondary me-1 mb-1">${escapeHtml(p.nickname)}</span>`).join('');
+        container.appendChild(div);
+    }
+}
+
+function addGroup() {
+    const input = document.getElementById('new-group-name');
+    const name = input.value.trim();
+    if (!name) return;
+    if (groups[name]) { alert('Группа уже существует'); return; }
+    groups[name] = [];
+    input.value = '';
+    renderGroups();
+}
+
+function deleteGroup(name) {
+    if (!confirm(`Удалить группу "${name}"?`)) return;
+    delete groups[name];
+    renderGroups();
+}
+
+function addMemberToGroup(gName, pid) {
+    if (!pid || !groups[gName]) return;
+    // Remove from other groups
+    Object.values(groups).forEach(ids => {
+        const idx = ids.indexOf(pid);
+        if (idx >= 0) ids.splice(idx, 1);
+    });
+    groups[gName].push(pid);
+    renderGroups();
+}
+
+function removeMember(gName, pid) {
+    if (!groups[gName]) return;
+    groups[gName] = groups[gName].filter(id => id !== pid);
+    renderGroups();
+}
+
+async function autoGroupByOrg() {
+    try {
+        const resp = await fetch(`/api/contest/${olympiadId}/auto_groups`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) {
+            groups = data.groups || {};
+            renderGroups();
+        }
+    } catch(e) { alert('Ошибка: ' + e.message); }
+}
+
+async function saveGroups() {
+    try {
+        const resp = await fetch(`/api/contest/${olympiadId}/groups`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ groups: groups })
+        });
+        const data = await resp.json();
+        const status = document.getElementById('save-status');
+        if (data.ok) {
+            status.textContent = '✅ Сохранено!';
+            status.style.color = '#198754';
+        } else {
+            status.textContent = '❌ Ошибка';
+            status.style.color = '#dc3545';
+        }
+        setTimeout(() => { status.textContent = ''; }, 3000);
+    } catch(e) { alert('Ошибка: ' + e.message); }
+}
+
+loadData();
+</script>
+{% endblock %}

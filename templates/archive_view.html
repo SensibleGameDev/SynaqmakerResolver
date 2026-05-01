@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Результаты: {{ olympiad_id }} — Synaqmaker Resolver{% endblock %}
+
+{% block content %}
+<style>
+    .first-to-solve {
+        background-color: #a7d2ac !important;
+        color: rgb(255, 255, 255) !important;
+        position: relative;
+    }
+    .first-to-solve .text-success, .first-to-solve .text-primary, .first-to-solve .text-muted, .first-to-solve .fw-bold {
+        color: rgb(0, 24, 2) !important;
+    }
+    .first-to-solve::after {
+        content: '★';
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        font-size: 1.2em;
+        color: #ffc107;
+        text-shadow: 1px 1px 2px black;
+        z-index: 10;
+    }
+</style>
+
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>
+            <span class="text-muted">Результаты:</span> {{ contest.name }}
+            <span class="badge bg-secondary fs-6 ms-2">{{ contest.scoring_type|upper }}</span>
+            {% if group_filter %}
+            <span class="badge bg-info fs-6 ms-2"><i class="bi bi-funnel-fill"></i> {{ group_filter }}</span>
+            {% endif %}
+        </h3>
+        <div>
+            {% if group_filter %}
+            <a href="{{ url_for('archive_export_excel', olympiad_id=olympiad_id, group=group_filter) }}" class="btn btn-success me-2">
+                <i class="bi bi-download"></i> Excel ({{ group_filter }})
+            </a>
+            {% else %}
+            <a href="{{ url_for('archive_export_excel', olympiad_id=olympiad_id) }}" class="btn btn-success me-2">
+                <i class="bi bi-download"></i> Excel
+            </a>
+            {% endif %}
+            <a href="{{ url_for('presentation', olympiad_id=olympiad_id) }}" class="btn btn-primary me-2" target="_blank">
+                <i class="bi bi-display"></i> Разморозка
+            </a>
+            <a href="{{ url_for('archive') }}" class="btn btn-outline-secondary">{{ t('back') }}</a>
+        </div>
+    </div>
+
+    {% if all_groups and all_groups|length > 0 %}
+    <div class="card shadow-sm mb-3 border-info">
+        <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
+            <span class="fw-bold me-2"><i class="bi bi-people-fill"></i> Группы:</span>
+            <a href="{{ url_for('archive_view', olympiad_id=olympiad_id) }}"
+               class="btn btn-sm {{ 'btn-info text-white' if not group_filter else 'btn-outline-info' }}">Все</a>
+            {% for gname in all_groups %}
+            <a href="{{ url_for('archive_view', olympiad_id=olympiad_id, group=gname) }}"
+               class="btn btn-sm {{ 'btn-info text-white' if group_filter == gname else 'btn-outline-info' }}">{{ gname }}</a>
+            {% endfor %}
+            <a href="{{ url_for('groups_page', olympiad_id=olympiad_id) }}" class="btn btn-sm btn-outline-secondary ms-auto">
+                <i class="bi bi-gear"></i> Настроить
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th>
+                            <th>Участник</th>
+                            <th>Орг.</th>
+                            {% set letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
+                            {% for task in tasks %}
+                            <th class="text-center" title="{{ task.title if task is mapping else task[1] if task is iterable and task|length > 1 else task }}">
+                                {{ letters[loop.index0] if loop.index0 < 26 else loop.index }}
+                            </th>
+                            {% endfor %}
+                            <th class="text-center">Итого</th>
+                            <th class="text-center">{{ 'Штраф' if contest.scoring_type == 'icpc' else 'Время' }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in participants %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><strong>{{ p.nickname }}</strong></td>
+                            <td><small>{{ p.organization or '-' }}</small></td>
+                            {% for task in tasks %}
+                                {% set tid = task.id if task is mapping else (task[0] if task is iterable and task|length > 0 else task) %}
+                                {% set s = p.scores.get(tid|string, p.scores.get(tid, {})) if p.scores else {} %}
+                                {% set is_fts = (first_solves and first_solves.get(tid|string) == p.get('participant_id', '')) %}
+                                {% set highlight_class = "first-to-solve" if is_fts and (s.get('passed') if contest.scoring_type == 'icpc' else s.get('score', 0) > 0) else "" %}
+                                <td class="text-center {{ highlight_class }}">
+                                    {% if contest.scoring_type == 'icpc' %}
+                                        {% if s.get('passed') %}
+                                            <span class="text-success fw-bold">+{{ (s.get('attempts', 1) - 1) if s.get('attempts', 1) > 1 else '' }}</span>
+                                            {% set wrong = (s.get('attempts', 1) - 1) if s.get('attempts', 1) > 1 else 0 %}
+                                            {% set solve_time = s.get('penalty', 0) - wrong * 20 %}
+                                            <br><small class="text-muted">({{ solve_time }}')</small>
+                                        {% elif s.get('attempts', 0) > 0 %}
+                                            <span class="text-danger">-{{ s.get('attempts', 0) }}</span>
+                                        {% else %}
+                                            <span class="text-muted">.</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="fw-bold {% if s.get('score', 0) > 0 %}text-primary{% else %}text-muted{% endif %}">
+                                            {{ s.get('score', 0) }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                            <td class="text-center fw-bold fs-5">
+                                {{ p.solved_count if contest.scoring_type == 'icpc' else p.total_score }}
+                            </td>
+                            <td class="text-center text-muted">{{ p.total_penalty }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

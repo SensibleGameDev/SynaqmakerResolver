@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Загрузка JSON — Synaqmaker Resolver{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-filetype-json"></i> Импорт из JSON-файла</h2>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> {{ t('back') }}
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <p class="text-muted">Загрузите JSON-файл с замороженными результатами для проведения разморозки.</p>
+                
+                <div class="mb-3">
+                    <label for="json-file" class="form-label fw-bold">JSON-файл</label>
+                    <input type="file" class="form-control" id="json-file" accept=".json">
+                </div>
+
+                <button type="button" class="btn btn-success" id="btn-upload" onclick="uploadJson()">
+                    <i class="bi bi-upload"></i> Загрузить и создать контест
+                </button>
+
+                <div id="upload-spinner" class="text-center py-3" style="display: none;">
+                    <div class="spinner-border text-success" role="status"></div>
+                    <div class="mt-2 text-muted">Загрузка...</div>
+                </div>
+
+                <div id="upload-result" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-info-circle"></i> Формат JSON
+            </div>
+            <div class="card-body small">
+                <p>JSON-файл должен содержать:</p>
+                <pre class="bg-light p-3 rounded" style="font-size: 0.85em;">{
+  "olympiad_id": "CF001234",
+  "name": "Contest Name",
+  "scoring_type": "icpc",
+  "freeze_time": 1700000000,
+  "tasks": [
+    {"id": "1", "title": "A. Task"}
+  ],
+  "frozen_scoreboard": [...],
+  "final_scoreboard": [...],
+  "first_solves": {"1": "participant_id"}
+}</pre>
+                <p class="mb-0 text-muted">Такой JSON можно экспортировать из любого контеста через кнопку «Скачать JSON».</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function uploadJson() {
+    const fileInput = document.getElementById('json-file');
+    const file = fileInput.files[0];
+    if (!file) { alert('Выберите файл'); return; }
+    if (!file.name.endsWith('.json')) { alert('Файл должен быть .json'); return; }
+
+    const btn = document.getElementById('btn-upload');
+    btn.disabled = true;
+    document.getElementById('upload-spinner').style.display = '';
+    document.getElementById('upload-result').style.display = 'none';
+
+    try {
+        const formData = new FormData();
+        formData.append('json_file', file);
+
+        const resp = await fetch('{{ url_for("json_import_upload") }}', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await resp.json();
+        const resultEl = document.getElementById('upload-result');
+
+        if (resp.ok && data.ok) {
+            resultEl.innerHTML = `
+                <div class="alert alert-success mt-3">
+                    <h5><i class="bi bi-check-circle"></i> Успешно!</h5>
+                    <p>"${escapeHtml(data.name)}" — ${data.participants_count} участников, ${data.problems_count} задач.</p>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="/presentation/${encodeURIComponent(data.olympiad_id)}" class="btn btn-primary" target="_blank">
+                            <i class="bi bi-display"></i> Разморозка
+                        </a>
+                        <a href="/" class="btn btn-outline-secondary"><i class="bi bi-house"></i> На главную</a>
+                    </div>
+                </div>`;
+        } else {
+            resultEl.innerHTML = `<div class="alert alert-danger mt-3">${escapeHtml(data.error || 'Ошибка')}</div>`;
+        }
+        resultEl.style.display = '';
+    } catch(err) {
+        document.getElementById('upload-result').innerHTML = `<div class="alert alert-danger mt-3">Ошибка: ${escapeHtml(err.message)}</div>`;
+        document.getElementById('upload-result').style.display = '';
+    } finally {
+        btn.disabled = false;
+        document.getElementById('upload-spinner').style.display = 'none';
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+flask
+flask-socketio
+flask-wtf
+gevent
+gevent-websocket
+pandas
+openpyxl
+sqlalchemy>=2.0
+requests

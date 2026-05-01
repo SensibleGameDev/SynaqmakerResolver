@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="{{ current_lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}Synaqmaker Resolver{% endblock %}</title>
+
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-icons.css') }}">
+
+    <style>
+        body { background-color: #f8f9fa; }
+    </style>
+    <script>
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(String(str)));
+            return div.innerHTML;
+        }
+
+        (function() {
+            var csrfToken = document.querySelector('meta[name="csrf-token"]');
+            if (!csrfToken) return;
+            var token = csrfToken.getAttribute('content');
+            var _origFetch = window.fetch;
+            window.fetch = function(url, options) {
+                options = options || {};
+                if (options.method && options.method.toUpperCase() !== 'GET') {
+                    options.headers = options.headers || {};
+                    if (options.headers instanceof Headers) {
+                        if (!options.headers.has('X-CSRFToken')) options.headers.set('X-CSRFToken', token);
+                    } else {
+                        if (!options.headers['X-CSRFToken']) options.headers['X-CSRFToken'] = token;
+                    }
+                }
+                return _origFetch.call(this, url, options);
+            };
+        })();
+    </script>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('dashboard') }}">
+                <i class="bi bi-display"></i> Synaqmaker Resolver
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    {% if session.get('is_admin') %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                            <i class="bi bi-house"></i> {{ t('nav_dashboard') }}
+                        </a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if '/import' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-cloud-arrow-down"></i> Импорт
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('codeforces_import_page') }}">
+                                <i class="bi bi-cloud-arrow-down text-info"></i> {{ t('nav_import_cf') }}
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('json_import_page') }}">
+                                <i class="bi bi-filetype-json text-success"></i> {{ t('nav_import_json') }}
+                            </a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/archive' in request.path %}active{% endif %}" href="{{ url_for('archive') }}">
+                            <i class="bi bi-archive"></i> {{ t('nav_archive') }}
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if session.get('is_admin') %}
+                    <li class="nav-item">
+                        <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">
+                            <i class="bi bi-box-arrow-right"></i> {{ t('logout') }}
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a href="{{ url_for('login') }}" class="btn btn-outline-light btn-sm">{{ t('login') }}</a>
+                    </li>
+                    {% endif %}
+                    <li class="nav-item dropdown ms-2">
+                        <a class="nav-link dropdown-toggle py-1 px-2" href="#" data-bs-toggle="dropdown" style="font-size:0.85rem;">
+                            <i class="bi bi-translate"></i> {{ LANGUAGES[current_lang] }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            {% for lc, lname in LANGUAGES.items() %}
+                            <li><a class="dropdown-item {% if lc == current_lang %}active{% endif %}" href="{{ url_for('set_language', lang=lc) }}">{{ lname }}</a></li>
+                            {% endfor %}
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="text-center text-muted py-4 mt-4 bg-light">
+        <p>&copy; Synaqmaker Resolver v1.0 — Standalone ICPC-style Scoreboard Resolver</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

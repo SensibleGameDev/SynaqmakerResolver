@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>ICPC Resolver - {{ olympiad_name|default('Contest') }}</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/bootstrap-icons.css') }}" rel="stylesheet">
+    <script>
+        (function() {
+            var csrfToken = document.querySelector('meta[name="csrf-token"]');
+            if (!csrfToken) return;
+            var token = csrfToken.getAttribute('content');
+            var _origFetch = window.fetch;
+            window.fetch = function(url, options) {
+                options = options || {};
+                if (options.method && options.method.toUpperCase() !== 'GET') {
+                    options.headers = options.headers || {};
+                    if (options.headers instanceof Headers) {
+                        if (!options.headers.has('X-CSRFToken')) options.headers.set('X-CSRFToken', token);
+                    } else {
+                        if (!options.headers['X-CSRFToken']) options.headers['X-CSRFToken'] = token;
+                    }
+                }
+                return _origFetch.call(this, url, options);
+            };
+        })();
+    </script>
+    <style>
+        body { background-color: #121212; color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow-x: hidden; }
+        ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+        html { scrollbar-width: none; -ms-overflow-style: none; }
+
+        .header-box { background: linear-gradient(90deg, #1cb5e0 0%, #000851 100%); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; position: relative; z-index: 1001; }
+        .resolver-container { max-width: 98%; margin: 0 auto; position: relative; padding-bottom: 300px; margin-top: 10px; }
+
+        .resolver-header { display: grid; grid-template-columns: 60px 1fr 90px 90px; grid-template-rows: auto auto; position: sticky; top: 0; z-index: 1000; background-color: #000; border-bottom: 2px solid #333; box-shadow: 0 4px 5px rgba(0,0,0,0.5); padding: 6px 0; }
+        .resolver-header .h-cell { color: #aaa; text-transform: uppercase; font-size: 0.85em; display: flex; align-items: center; justify-content: center; padding: 4px 0; }
+        .resolver-header .h-rank { grid-column: 1; grid-row: 1 / 3; }
+        .resolver-header .h-name { grid-column: 2; grid-row: 1; justify-content: flex-start; padding-left: 10px; font-size: 0.8em; }
+        .resolver-header .h-solved { grid-column: 3; grid-row: 1 / 3; }
+        .resolver-header .h-penalty { grid-column: 4; grid-row: 1 / 3; }
+        .resolver-header .h-prob-line { grid-column: 2; grid-row: 2; display: flex; padding: 0 2px; }
+        .resolver-header .h-prob { flex: 1; text-align: center; color: #666; text-transform: uppercase; font-size: 0.9em; font-weight: bold; }
+
+        .resolver-body { position: relative; }
+
+        .team-row { display: grid; grid-template-columns: 60px 1fr 90px 90px; grid-template-rows: 30px 46px; width: 100%; height: 76px; position: absolute; left: 0; background-color: #2c2c2c; border-radius: 6px; z-index: 1; transition: transform 1.8s ease-in-out, background-color 0.4s, box-shadow 0.4s; overflow: hidden; }
+        .team-row.climbing { z-index: 100 !important; box-shadow: 0 0 25px rgba(255, 193, 7, 0.5), 0 8px 30px rgba(0,0,0,0.6); background-color: #3a3520; }
+        .team-row .col-rank { grid-column: 1; grid-row: 1 / 3; font-size: 1.5em; font-weight: bold; text-align: center; color: #fff; display: flex; align-items: center; justify-content: center; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+        .team-row .col-name { grid-column: 2; grid-row: 1; font-size: 1.5em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; align-self: end; line-height: 1.3; }
+        .team-org-prefix { color: #888; font-weight: 400; font-size: 1em; }
+        .team-row .col-stats { grid-row: 1 / 3; text-align: center; font-family: monospace; font-size: 1.5em; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; }
+        .team-row .col-solved { grid-column: 3; }
+        .team-row .col-penalty { grid-column: 4; border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+        .team-prob-line { grid-column: 2; grid-row: 2; display: flex; align-items: stretch; gap: 2px; padding: 2px 2px; }
+        .team-prob-line .col-prob { flex: 1; text-align: center; font-weight: bold; font-family: 'Consolas', 'Courier New', monospace; font-size: 1.05em; display: flex; align-items: center; justify-content: center; border-radius: 3px; letter-spacing: -0.5px; }
+
+        .team-row .cell-ok { background-color: #2d8b47; color: white; }
+        .team-row .cell-wa { background-color: #7a2020; color: #e0a0a0; }
+        .team-row .cell-partial { background-color: #2471a3; color: #d4efff; }
+        .team-row .cell-neutral { background-color: #1a1a1a; color: #444; font-size: 0.85em; }
+        .team-row .cell-ok.cell-fts { background-color: #145124; color: #a0ffc0; animation: ftsGlow 2.5s ease-in-out infinite; }
+        @keyframes ftsGlow { 0%, 100% { box-shadow: 0 0 6px rgba(26, 107, 48, 0.4), inset 0 0 5px rgba(26, 107, 48, 0.2); } 50% { box-shadow: 0 0 18px rgba(26, 107, 48, 0.9), inset 0 0 10px rgba(45, 139, 71, 0.4); } }
+        .team-row .cell-pending { background-color: #1e3a50; color: #f1c40f; border: 2px solid #d4ac0d; animation: pendingGlow 2s ease-in-out infinite; }
+        .active-reveal-row { background-color: #0a2a5a !important; border: 2px solid #1565c0; z-index: 50; box-shadow: 0 0 30px rgba(21, 101, 192, 0.5), inset 0 0 20px rgba(21, 101, 192, 0.1); }
+        .medal-gold { background: linear-gradient(45deg, #FFD700, #FDB931); color: black !important; }
+        .medal-silver { background: linear-gradient(45deg, #E0E0E0, #BDBDBD); color: black !important; }
+        .medal-bronze { background: linear-gradient(45deg, #CD7F32, #A0522D); color: white; }
+        .medal-gold .col-stats, .medal-silver .col-stats { background: transparent !important; color: #000 !important; }
+        .medal-bronze .col-stats { background: transparent !important; color: #fff !important; }
+        .medal-gold .col-name, .medal-silver .col-name { color: #000; }
+        .medal-gold .team-org-prefix, .medal-silver .team-org-prefix { color: #000; }
+        .medal-bronze .team-org-prefix { color: #fff; }
+        .medal-gold .col-rank, .medal-silver .col-rank { color: #000; }
+        .rank-badge { display: inline-block; width: 40px; height: 40px; line-height: 40px; border-radius: 50%; background: #222; color: #fff; font-size: 0.75em; }
+        .medal-gold .rank-badge { border: 2px solid #000; background: transparent; color: #000; }
+        .medal-silver .rank-badge { border: 2px solid #000; background: transparent; color: #000; }
+        .medal-bronze .rank-badge { border: 2px solid #fff; background: transparent; }
+
+        @keyframes pendingGlow { 0%, 100% { border-color: #d4ac0d; box-shadow: 0 0 6px rgba(212, 172, 13, 0.15); } 50% { border-color: #f1c40f; box-shadow: 0 0 18px rgba(241, 196, 15, 0.45); } }
+        @keyframes flashGreen { 0% { background-color: #fff; box-shadow: 0 0 20px rgba(93, 222, 139, 0.8); } 30% { background-color: #5dde8b; } 100% { background-color: #2d8b47; box-shadow: none; } }
+        @keyframes flashRed { 0% { background-color: #fff; box-shadow: 0 0 20px rgba(255, 107, 107, 0.8); } 30% { background-color: #ff6b6b; } 100% { background-color: #7a2020; box-shadow: none; } }
+        .team-row .anim-ok { animation: flashGreen 0.8s ease-out forwards; }
+        .team-row .anim-wa { animation: flashRed 0.8s ease-out forwards; }
+
+        @keyframes cellHighlight {
+            0%   { background-color: #2a2208; box-shadow: 0 0 4px rgba(200, 160, 20, 0.15); border-color: #5a4d1a; }
+            50%  { background-color: #4a3d12; box-shadow: 0 0 10px rgba(200, 160, 20, 0.35); border-color: #8a7520; }
+            100% { background-color: #2a2208; box-shadow: 0 0 4px rgba(200, 160, 20, 0.15); border-color: #5a4d1a; }
+        }
+        .cell-highlighting { animation: cellHighlight 1s ease-in-out infinite !important; position: relative; border: 2px solid #5a4d1a !important; color: #d4a017 !important; }
+
+        @keyframes rowFlashGreen {
+            0% { background-color: #145124 !important; box-shadow: 0 0 30px rgba(45, 139, 71, 0.9) !important; }
+            30% { background-color: #2d8b47 !important; }
+            100% { background-color: #0a2a5a !important; box-shadow: 0 0 30px rgba(21, 101, 192, 0.5), inset 0 0 20px rgba(21, 101, 192, 0.1) !important; }
+        }
+        @keyframes rowFlashRed {
+            0% { background-color: #5a1a1a !important; box-shadow: 0 0 30px rgba(255, 107, 107, 0.9) !important; }
+            30% { background-color: #ff6b6b !important; }
+            100% { background-color: #0a2a5a !important; box-shadow: 0 0 30px rgba(21, 101, 192, 0.5), inset 0 0 20px rgba(21, 101, 192, 0.1) !important; }
+        }
+        .row-anim-ok { animation: rowFlashGreen 1s ease-out; }
+        .row-anim-wa { animation: rowFlashRed 1s ease-out; }
+
+        .controls { position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; z-index: 2000; }
+        .controls-show-btn { position: fixed; bottom: 20px; right: 20px; z-index: 2000; background: rgba(0,0,0,0.5); border: 1px solid #444; color: #888; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 1.2em; display: flex; align-items: center; justify-content: center; }
+        .controls-show-btn:hover { color: #fff; background: rgba(0,0,0,0.8); }
+
+        #nomination-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(ellipse at center, #1a1a2e 0%, #000 70%); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; text-align: center; }
+        #nomination-overlay.active { display: flex; animation: nomFadeIn 0.6s ease-out; }
+        @keyframes nomFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .nom-place { font-size: 6em; font-weight: 900; margin-bottom: 10px; letter-spacing: 0.05em; text-shadow: 0 0 40px currentColor; animation: nomSlideDown 0.6s ease-out; }
+        @keyframes nomSlideDown { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .nom-medal-text { font-size: 2.2em; margin-bottom: 25px; letter-spacing: 0.15em; text-transform: uppercase; animation: nomSlideDown 0.6s ease-out 0.1s both; }
+        .nom-divider { width: 250px; height: 2px; margin: 15px auto; animation: nomScale 0.5s ease-out 0.2s both; }
+        @keyframes nomScale { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        .nom-name { font-size: 4.5em; font-weight: bold; margin-bottom: 10px; animation: nomSlideUp 0.7s ease-out 0.3s both; }
+        @keyframes nomSlideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .nom-org { font-size: 2em; margin-bottom: 20px; animation: nomSlideUp 0.7s ease-out 0.4s both; }
+        .nom-special { font-size: 1.4em; color: #ffd700; margin-top: 15px; animation: nomSlideUp 0.7s ease-out 0.5s both; }
+        .nom-special .fts-line { margin: 5px 0; }
+        .nom-hint { position: absolute; bottom: 30px; font-size: 0.9em; color: #555; transition: opacity 0.5s ease; opacity: 0; }
+        #nom-content { display: flex; flex-direction: column; align-items: center; text-align: center; transition: opacity 0.5s ease, transform 0.5s ease; }
+        #nom-content.fading { opacity: 0; transform: scale(0.95); }
+        .nom-gold { color: #FFD700; } .nom-silver { color: #C0C0C0; } .nom-bronze { color: #CD7F32; } .nom-fts { color: #00e5ff; } .nom-custom { color: #ff6ec7; }
+        .custom-nom-item { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; background: #2a2a3a; border-radius: 8px; }
+        .custom-nom-item .nom-title-text { flex: 1; color: #ff6ec7; font-weight: 600; font-size: 1em; text-align: left; }
+        .custom-nom-item select { flex: 1; padding: 4px 8px; background: #121212; color: #fff; border: 1px solid #555; border-radius: 6px; font-size: 0.9em; }
+        .custom-nom-item .btn-remove-nom { background: none; border: none; color: #f55; cursor: pointer; font-size: 1.1em; padding: 2px 6px; }
+
+        #medal-config-overlay { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92); z-index: 10000; justify-content: flex-start; align-items: center; flex-direction: column; overflow-y: auto; padding: 40px 0; }
+        #medal-config-overlay.hidden { display: none; }
+        .medal-config-box { background: #1e1e2e; border: 1px solid #444; border-radius: 16px; padding: 40px 50px; max-width: 560px; width: 90%; text-align: center; box-shadow: 0 0 60px rgba(13,202,240,0.15); margin: auto; }
+        .medal-config-box h2 { margin-bottom: 10px; font-size: 2em; background: linear-gradient(90deg, #1cb5e0, #ffd700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .medal-config-box p { color: #888; margin-bottom: 30px; }
+        .medal-input-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; padding: 12px 20px; border-radius: 10px; background: #2a2a3a; }
+        .medal-input-group label { font-size: 1.25em; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        .medal-input-group input[type="number"] { width: 80px; padding: 8px 12px; font-size: 1.3em; text-align: center; border: 2px solid #555; border-radius: 8px; background: #121212; color: #fff; font-weight: bold; }
+        .medal-input-group input[type="number"]:focus { outline: none; border-color: #0dcaf0; }
+        .medal-input-gold label { color: #FFD700; } .medal-input-silver label { color: #C0C0C0; } .medal-input-bronze label { color: #CD7F32; }
+        .medal-remaining { margin: 20px 0; font-size: 1.1em; color: #aaa; }
+        .medal-remaining span { color: #0dcaf0; font-weight: bold; }
+        #start-reveal-btn { margin-top: 15px; padding: 14px 50px; font-size: 1.3em; font-weight: bold; border: none; border-radius: 10px; background: linear-gradient(90deg, #1cb5e0, #000851); color: #fff; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        #start-reveal-btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(28,181,224,0.5); }
+
+        #honorable-mention-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000; z-index: 9998; flex-direction: column; align-items: center; overflow: hidden; opacity: 0; }
+        #honorable-mention-overlay.active { display: flex; animation: hmOverlayFadeIn 1.5s ease-out forwards; }
+        @keyframes hmOverlayFadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+        #honorable-mention-overlay.dismissing { animation: hmOverlayFadeOut 1s ease-in forwards; }
+        @keyframes hmOverlayFadeOut { 0% { opacity: 1; } 100% { opacity: 0; } }
+        .hm-title { font-size: 4em; font-weight: 900; color: #0dcaf0; margin-top: 60px; margin-bottom: 5px; letter-spacing: 0.12em; text-transform: uppercase; text-shadow: 0 0 40px rgba(13,202,240,0.6); flex-shrink: 0; opacity: 0; animation: hmTitleAppear 1.2s ease-out 0.5s forwards; }
+        @keyframes hmTitleAppear { 0% { opacity: 0; transform: scale(0.7); } 60% { opacity: 1; transform: scale(1.03); } 100% { opacity: 1; transform: scale(1); } }
+        .hm-subtitle { font-size: 1.4em; color: #556; margin-bottom: 25px; letter-spacing: 0.2em; flex-shrink: 0; opacity: 0; animation: hmSubAppear 1s ease-out 1.2s forwards; }
+        @keyframes hmSubAppear { from { opacity: 0; transform: translateY(10px); } to { opacity: 0.7; transform: translateY(0); } }
+        .hm-divider { width: 350px; height: 2px; background: linear-gradient(90deg, transparent, #0dcaf0, transparent); margin-bottom: 30px; flex-shrink: 0; opacity: 0; animation: hmDividerGrow 0.8s ease-out 1.6s forwards; }
+        @keyframes hmDividerGrow { 0% { opacity: 0; transform: scaleX(0); } 100% { opacity: 1; transform: scaleX(1); } }
+        .hm-scroll-container { flex: 1; width: 100%; overflow: hidden; position: relative; mask-image: linear-gradient(to bottom, transparent 0%, #000 15%, #000 75%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 15%, #000 75%, transparent 100%); }
+        .hm-credits { display: flex; flex-direction: column; align-items: center; width: 100%; position: absolute; left: 0; }
+        .hm-participant { text-align: center; margin-bottom: 45px; opacity: 0; transform: translateY(60px) scale(0.85); animation: hmItemFlyIn 1s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+        .hm-participant-name { font-size: 2.2em; font-weight: 700; color: #fff; }
+        .hm-participant-org { font-size: 1.15em; color: #667; margin-top: 5px; font-style: italic; }
+        .hm-participant-line { width: 40px; height: 1px; background: linear-gradient(90deg, transparent, rgba(13,202,240,0.4), transparent); margin: 8px auto 0; }
+        @keyframes hmItemFlyIn { 0% { opacity: 0; transform: translateY(60px) scale(0.85); } 50% { opacity: 0.8; } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+        .hm-hint { position: absolute; bottom: 30px; font-size: 0.9em; color: #555; flex-shrink: 0; z-index: 2; opacity: 0; transition: opacity 0.5s ease; }
+        .hm-particle { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(13,202,240,0.4); animation: hmParticleFloat linear infinite; pointer-events: none; }
+        @keyframes hmParticleFloat { 0% { transform: translateY(0) scale(1); opacity: 0.6; } 50% { opacity: 0.3; } 100% { transform: translateY(-100vh) scale(0); opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div class="header-box">
+    <div>
+        <h2 class="m-0">{{ olympiad_name|default('Contest') }}
+            {% if group_filter is defined and group_filter %}
+            <span class="badge bg-warning text-dark fs-5 ms-2">{{ group_filter }}</span>
+            {% endif %}
+        </h2>
+        <small class="text-light">Presentation Mode
+            {% if all_groups is defined and all_groups|length > 0 %}
+            — <a href="{{ url_for('presentation', olympiad_id=olympiad_id) }}" class="text-light text-decoration-underline">Все</a>
+            {% for gname in all_groups %}
+                | <a href="{{ url_for('presentation', olympiad_id=olympiad_id, group=gname) }}" 
+                     class="text-light {{ 'fw-bold' if group_filter is defined and group_filter == gname else '' }}" 
+                     style="text-decoration: underline;">{{ gname }}</a>
+            {% endfor %}
+            {% endif %}
+        </small>
+    </div>
+    <div class="text-end">
+        <h3 id="status-display" class="m-0">PAUSED</h3>
+        <small>Press SPACE to reveal</small>
+    </div>
+</div>
+
+<div class="resolver-container">
+    <div class="resolver-header">
+        <div class="h-cell h-rank">Rank</div>
+        <div class="h-cell h-name">Participant</div>
+        <div class="h-cell h-solved">Solved</div>
+        <div class="h-cell h-penalty">Time</div>
+        <div class="h-prob-line">
+            {% set letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" %}
+            {% if tasks %}
+                {% for t in tasks %}
+                <div class="h-prob">{{ letters[loop.index0] if loop.index0 < 26 else loop.index }}</div>
+                {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    <div id="resolver-body" class="resolver-body"></div>
+</div>
+
+<div class="controls" id="controls-panel">
+    <button id="toggle-org-btn" class="btn btn-outline-info btn-sm" onclick="toggleOrg()">Скрыть орг.</button>
+    <button id="auto-play-btn" class="btn btn-outline-light btn-sm" onclick="toggleAuto()">Auto Play</button>
+    <button class="btn btn-outline-light btn-sm" onclick="stepForward()">▶ Step</button>
+    <button class="btn btn-outline-warning btn-sm" onclick="stepBackward()">◀ Back</button>
+    <hr style="margin:5px 0; border-color:#444;">
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:5px;">
+        <label style="font-size:0.8em; color:#aaa; white-space:nowrap;">Задержка:</label>
+        <input type="range" id="pulse-slider" min="300" max="3000" value="1000" step="100" style="flex:1; accent-color:#d4a017; cursor:pointer;">
+        <span id="pulse-value" style="font-size:0.8em; color:#d4a017; min-width:32px; text-align:right;">1.0s</span>
+    </div>
+    <button class="btn btn-outline-secondary btn-sm w-100" onclick="toggleControls()"><i class="bi bi-eye-slash"></i> Скрыть (H)</button>
+</div>
+<button id="controls-show-btn" class="controls-show-btn" onclick="toggleControls()" title="Показать панель (H)" style="display:none;"><i class="bi bi-gear-fill"></i></button>
+
+<div id="medal-config-overlay">
+    <div class="medal-config-box">
+        <h2>🏅 Настройка медалей</h2>
+        <p>Укажите количество участников для каждой медали</p>
+        <div class="medal-input-group medal-input-gold">
+            <label>🥇 Золото</label>
+            <input type="number" id="gold-count" min="0" value="1">
+        </div>
+        <div class="medal-input-group medal-input-silver">
+            <label>🥈 Серебро</label>
+            <input type="number" id="silver-count" min="0" value="2">
+        </div>
+        <div class="medal-input-group medal-input-bronze">
+            <label>🥉 Бронза</label>
+            <input type="number" id="bronze-count" min="0" value="3">
+        </div>
+        <div class="medal-remaining">
+            Всего участников: <span id="total-participants">0</span> &nbsp;|&nbsp; 
+            Без медали: <span id="no-medal-count">0</span>
+        </div>
+        <hr style="border-color: #444; margin: 20px 0;">
+        <h4 style="color: #0dcaf0; font-size: 1.1em; margin-bottom: 15px;">🏆 Дополнительные номинации</h4>
+        <div id="custom-nominations-list"></div>
+        <div class="d-flex gap-2 mb-3">
+            <input type="text" id="new-nom-title" class="form-control form-control-sm" placeholder="Название номинации" style="background:#121212; color:#fff; border-color:#555;">
+            <button type="button" class="btn btn-sm btn-outline-info" onclick="addCustomNomination()" style="white-space:nowrap;">+ Добавить</button>
+        </div>
+        <div class="form-text" style="color:#666; font-size:0.85em; margin-bottom:15px;">Примеры: «Лучший новичок», «Самый быстрый первый AC»</div>
+        <div style="display:flex; gap:10px; justify-content:center; margin-bottom:15px;">
+            <button type="button" id="save-settings-btn" class="btn btn-sm btn-outline-success" onclick="saveCeremonySettings()"><i class="bi bi-save"></i> Сохранить</button>
+            <button type="button" id="load-settings-btn" class="btn btn-sm btn-outline-warning" onclick="loadCeremonySettings()"><i class="bi bi-arrow-repeat"></i> Загрузить</button>
+        </div>
+        <div id="settings-status" style="text-align:center; font-size:0.85em; margin-bottom:12px; min-height:1.3em;"></div>
+        <button id="start-reveal-btn" onclick="startReveal()">Начать разморозку ▶</button>
+    </div>
+</div>
+
+<div id="honorable-mention-overlay">
+    <div id="hm-particles"></div>
+    <div class="hm-title">Honorable Mention</div>
+    <div class="hm-subtitle">Благодарственное письмо</div>
+    <div class="hm-divider"></div>
+    <div class="hm-scroll-container">
+        <div class="hm-credits" id="hm-credits-list"></div>
+    </div>
+    <div class="hm-hint" id="hm-hint">Нажмите SPACE для продолжения</div>
+</div>
+
+<div id="nomination-overlay">
+    <div id="nom-content">
+        <div id="nom-place" class="nom-place"></div>
+        <div id="nom-medal-text" class="nom-medal-text"></div>
+        <div class="nom-divider" id="nom-divider"></div>
+        <div id="nom-name" class="nom-name"></div>
+        <div id="nom-org" class="nom-org"></div>
+        <div id="nom-special" class="nom-special"></div>
+    </div>
+    <div class="nom-hint" id="nom-hint">Нажмите SPACE для продолжения</div>
+</div>
+
+<script>
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep(freq = 440, duration = 100, type = 'sine') {
+        try { const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = type; o.frequency.value = freq; o.connect(g); g.connect(audioCtx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration / 1000); o.stop(audioCtx.currentTime + duration / 1000); } catch(e) {}
+    }
+    function playSound(type) { if (type === 'tick') beep(300, 50); if (type === 'ok') beep(600, 150, 'square'); if (type === 'wa') beep(150, 200, 'sawtooth'); }
+
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    const frozenBoard = {{ frozen_scoreboard|default([])|tojson }};
+    const finalBoard = {{ final_scoreboard|default([])|tojson }};
+    
+    {% set safe_scoring = 'icpc' %}
+    {% if config and config.config and config.config.scoring %}
+        {% set safe_scoring = config.config.scoring %}
+    {% endif %}
+    const scoringType = {{ safe_scoring | tojson }};
+
+    const tasks = [
+        {% if tasks %}
+            {% for t in tasks %}
+                [ {{ t[0] | tojson }}, {{ t[1] | tojson }} ],
+            {% endfor %}
+        {% endif %}
+    ];
+    const taskIds = tasks.map(t => String(t[0]));
+    document.documentElement.style.setProperty('--task-count', taskIds.length);
+
+    const firstSolvesRaw = {{ first_solves|tojson if first_solves is defined else '{}' }};
+    const firstSolves = {};
+    for (const [k, v] of Object.entries(firstSolvesRaw)) { firstSolves[String(k)] = String(v); }
+
+    let goldCount = 1, silverCount = 2, bronzeCount = 3;
+    let medalRecipients = {};
+    const sortedFinal = [...finalBoard].sort((a, b) => {
+        const aScore = (a.total_score !== undefined ? a.total_score : (a.solved_count || 0));
+        const bScore = (b.total_score !== undefined ? b.total_score : (b.solved_count || 0));
+        if (bScore !== aScore) return bScore - aScore;
+        return (a.total_penalty || 0) - (b.total_penalty || 0);
+    });
+
+    function recomputeMedals() {
+        medalRecipients = {};
+        sortedFinal.forEach((p, i) => {
+            if (i < goldCount) medalRecipients[p.participant_id] = {type: 'gold', rank: i + 1};
+            else if (i < goldCount + silverCount) medalRecipients[p.participant_id] = {type: 'silver', rank: i + 1};
+            else if (i < goldCount + silverCount + bronzeCount) medalRecipients[p.participant_id] = {type: 'bronze', rank: i + 1};
+        });
+    }
+    recomputeMedals();
+
+    let pulseDurationMs = 1000;
+    (function() {
+        const slider = document.getElementById('pulse-slider');
+        const valueEl = document.getElementById('pulse-value');
+        if (slider) {
+            slider.addEventListener('input', function() {
+                pulseDurationMs = parseInt(this.value);
+                valueEl.innerText = (pulseDurationMs / 1000).toFixed(1) + 's';
+            });
+        }
+    })();
+
+    let teams = []; let currentFocusId = null; let isAutoPlaying = false; let autoPlayInterval = null;
+    let isAnimationRunning = false; let isNominationVisible = false; let honorableMentionShown = false;
+    let revealStarted = false; let showOrg = true; let stateHistory = []; const MAX_HISTORY = 200;
+    const ROW_STEP = 82;
+
+    function formatTeamName(team) {
+        if (showOrg && team.org) return `<span class="team-org-prefix">${escapeHtml(team.org)}:</span> ${escapeHtml(team.nickname)}`;
+        return escapeHtml(team.nickname);
+    }
+    function refreshAllNames() { teams.forEach(team => { const tr = document.getElementById(`row-${team.id}`); if (tr) tr.children[1].innerHTML = formatTeamName(team); }); }
+    function toggleOrg() { showOrg = !showOrg; const btn = document.getElementById('toggle-org-btn'); btn.innerText = showOrg ? 'Скрыть орг.' : 'Показать орг.'; btn.classList.toggle('btn-outline-info', showOrg); btn.classList.toggle('btn-outline-secondary', !showOrg); refreshAllNames(); }
+    function toggleControls() { const panel = document.getElementById('controls-panel'); const showBtn = document.getElementById('controls-show-btn'); if (panel.style.display === 'none') { panel.style.display = ''; showBtn.style.display = 'none'; } else { panel.style.display = 'none'; showBtn.style.display = 'flex'; } }
+
+    function saveStateSnapshot() { stateHistory.push({ teams: JSON.parse(JSON.stringify(teams)), currentFocusId, honorableMentionShown }); if (stateHistory.length > MAX_HISTORY) stateHistory.shift(); }
+    function stepBackward() {
+        if (!revealStarted || isAnimationRunning || stateHistory.length === 0 || isNominationVisible) return;
+        isAnimationRunning = true;
+        const snapshot = stateHistory.pop(); teams = snapshot.teams; currentFocusId = snapshot.currentFocusId; honorableMentionShown = snapshot.honorableMentionShown;
+        rebuildAllVisuals();
+        if (currentFocusId) scrollToTeam(currentFocusId);
+        document.getElementById('status-display').innerText = currentFocusId ? "STEP BACK" : "PAUSED";
+        document.getElementById('status-display').style.color = "#fff";
+        isAnimationRunning = false;
+    }
+
+    function rebuildAllVisuals() {
+        teams.forEach(team => {
+            const tr = document.getElementById(`row-${team.id}`); if (!tr) return;
+            tr.classList.remove('medal-gold', 'medal-silver', 'medal-bronze', 'climbing', 'active-reveal-row', 'row-anim-ok', 'row-anim-wa');
+            tr.children[0].innerHTML = `<span class="rank-badge">${team.currentIdx + 1}</span>`;
+            tr.children[1].innerHTML = formatTeamName(team);
+            tr.children[2].innerText = team.total_score; tr.children[2].style.color = '#0dcaf0';
+            tr.children[3].innerText = team.total_penalty; tr.children[3].style.color = '#aaa';
+            taskIds.forEach(tid => updateTaskCell(team, tid, false));
+            tr.style.transition = 'none';
+            tr.style.transform = `translateY(${team.currentIdx * ROW_STEP - parseInt(tr.style.top || 0, 10)}px)`;
+            void tr.offsetHeight; tr.style.transition = '';
+            if (team.id === currentFocusId) tr.classList.add('active-reveal-row');
+            if (team.isFinalized && medalRecipients[team.id]) { tr.classList.add(`medal-${medalRecipients[team.id].type}`); tr.children[2].style.color = ''; tr.children[3].style.color = ''; }
+        });
+    }
+
+    function updateMedalConfigUI() {
+        const total = sortedFinal.length;
+        const g = parseInt(document.getElementById('gold-count').value) || 0;
+        const s = parseInt(document.getElementById('silver-count').value) || 0;
+        const b = parseInt(document.getElementById('bronze-count').value) || 0;
+        document.getElementById('total-participants').innerText = total;
+        document.getElementById('no-medal-count').innerText = Math.max(0, total - g - s - b);
+        const btn = document.getElementById('start-reveal-btn');
+        if (g + s + b > total) { btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; } else { btn.style.opacity = '1'; btn.style.pointerEvents = 'auto'; }
+    }
+    document.addEventListener('DOMContentLoaded', () => { ['gold-count', 'silver-count', 'bronze-count'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', updateMedalConfigUI); }); updateMedalConfigUI(); });
+
+    let customNominations = [];
+    function addCustomNomination() { const input = document.getElementById('new-nom-title'); const title = input.value.trim(); if (!title) return; customNominations.push({ title, participantId: null }); input.value = ''; renderCustomNominations(); }
+    function removeCustomNomination(idx) { customNominations.splice(idx, 1); renderCustomNominations(); }
+    function renderCustomNominations() {
+        const container = document.getElementById('custom-nominations-list'); container.innerHTML = '';
+        customNominations.forEach((nom, idx) => {
+            const div = document.createElement('div'); div.className = 'custom-nom-item';
+            let optionsHtml = '<option value="">— Выберите —</option>';
+            sortedFinal.forEach(p => { optionsHtml += `<option value="${escapeHtml(p.participant_id)}" ${nom.participantId === p.participant_id ? 'selected' : ''}>${escapeHtml(p.nickname)}</option>`; });
+            div.innerHTML = `<span class="nom-title-text">🏆 ${escapeHtml(nom.title)}</span><select onchange="customNominations[${idx}].participantId = this.value">${optionsHtml}</select><button type="button" class="btn-remove-nom" onclick="removeCustomNomination(${idx})">✕</button>`;
+            container.appendChild(div);
+        });
+    }
+    function getCustomNominationsForTeam(teamId) { return customNominations.filter(n => n.participantId && String(n.participantId) === String(teamId)); }
+
+    const olympiadId = {{ olympiad_id|tojson }};
+    function showSettingsStatus(msg, color) { const el = document.getElementById('settings-status'); el.innerText = msg; el.style.color = color || '#aaa'; setTimeout(() => { if (el.innerText === msg) el.innerText = ''; }, 4000); }
+
+    function saveCeremonySettings() {
+        const g = parseInt(document.getElementById('gold-count').value) || 0;
+        const s = parseInt(document.getElementById('silver-count').value) || 0;
+        const b = parseInt(document.getElementById('bronze-count').value) || 0;
+        if (g < 0 || s < 0 || b < 0) { showSettingsStatus('Количество не может быть отрицательным', '#f55'); return; }
+        if (g + s + b > sortedFinal.length) { showSettingsStatus(`Сумма (${g+s+b}) > участников (${sortedFinal.length})`, '#f55'); return; }
+        const noms = customNominations.map(n => ({ title: n.title, participantId: n.participantId || null }));
+        fetch(`/api/contest/${olympiadId}/ceremony_settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gold: g, silver: s, bronze: b, nominations: noms }) })
+        .then(r => r.json()).then(data => { showSettingsStatus(data.ok ? '✅ Сохранено' : '❌ ' + (data.error || 'Ошибка'), data.ok ? '#4f4' : '#f55'); }).catch(() => showSettingsStatus('❌ Ошибка сети', '#f55'));
+    }
+
+    function loadCeremonySettings() {
+        fetch(`/api/contest/${olympiadId}/ceremony_settings`).then(r => r.json()).then(data => {
+            if (data.ok && data.settings) { applyCeremonySettings(data.settings); showSettingsStatus('✅ Загружено', '#4f4'); } else { showSettingsStatus('Нет сохранённых', '#fa0'); }
+        }).catch(() => showSettingsStatus('❌ Ошибка сети', '#f55'));
+    }
+
+    function applyCeremonySettings(settings) {
+        document.getElementById('gold-count').value = settings.gold || 0;
+        document.getElementById('silver-count').value = settings.silver || 0;
+        document.getElementById('bronze-count').value = settings.bronze || 0;
+        updateMedalConfigUI();
+        customNominations = (settings.nominations || []).map(n => ({ title: n.title || '', participantId: n.participantId || null }));
+        renderCustomNominations();
+    }
+
+    const savedCeremonySettings = {{ ceremony_settings|tojson if ceremony_settings else 'null' }};
+    (function() { try { if (savedCeremonySettings && savedCeremonySettings.gold !== undefined) applyCeremonySettings(savedCeremonySettings); } catch(e) {} })();
+
+    function startReveal() {
+        goldCount = Math.max(0, parseInt(document.getElementById('gold-count').value) || 0);
+        silverCount = Math.max(0, parseInt(document.getElementById('silver-count').value) || 0);
+        bronzeCount = Math.max(0, parseInt(document.getElementById('bronze-count').value) || 0);
+        recomputeMedals(); document.getElementById('medal-config-overlay').classList.add('hidden'); revealStarted = true;
+    }
+
+    function getHonorableMentionParticipants() { const total = goldCount + silverCount + bronzeCount; return sortedFinal.filter((_, i) => i >= total).map(p => ({ nickname: p.nickname, org: p.organization || '' })); }
+    function spawnHMParticles() { const c = document.getElementById('hm-particles'); c.innerHTML = ''; for (let i = 0; i < 30; i++) { const p = document.createElement('div'); p.className = 'hm-particle'; p.style.left = Math.random()*100+'%'; p.style.bottom = '-5px'; p.style.animationDuration = (6+Math.random()*8)+'s'; p.style.animationDelay = (Math.random()*6)+'s'; p.style.width = p.style.height = (2+Math.random()*3)+'px'; c.appendChild(p); } }
+
+    function showHonorableMention() {
+        return new Promise(resolve => {
+            const hmParticipants = getHonorableMentionParticipants();
+            if (hmParticipants.length === 0) { resolve(); return; }
+            const overlay = document.getElementById('honorable-mention-overlay');
+            const creditsList = document.getElementById('hm-credits-list');
+            creditsList.innerHTML = '';
+            const staggerDelay = 0.5, headerDelay = 2.2;
+            hmParticipants.forEach((p, i) => {
+                const div = document.createElement('div'); div.className = 'hm-participant';
+                div.style.animationDelay = (headerDelay + i * staggerDelay) + 's';
+                div.innerHTML = `<div class="hm-participant-name">${escapeHtml(p.nickname)}</div><div class="hm-participant-org">${escapeHtml(p.org)}</div><div class="hm-participant-line"></div>`;
+                creditsList.appendChild(div);
+            });
+            overlay.classList.remove('dismissing'); overlay.classList.add('active'); spawnHMParticles();
+            beep(440, 400, 'sine'); setTimeout(() => beep(554, 400, 'sine'), 300); setTimeout(() => beep(659, 500, 'sine'), 600); setTimeout(() => beep(554, 600, 'sine'), 1100);
+            const scrollContainer = document.querySelector('.hm-scroll-container');
+            let containerH = scrollContainer.offsetHeight || window.innerHeight;
+            let displayDuration = 0, animFrameId = null;
+            if (hmParticipants.length <= 4) {
+                creditsList.style.top = '50%'; creditsList.style.transform = 'translateY(-50%)';
+                displayDuration = headerDelay + (hmParticipants.length * staggerDelay) + 3;
+            } else {
+                creditsList.style.top = `${containerH}px`;
+                setTimeout(() => {
+                    let totalContentH = creditsList.offsetHeight; let currentY = containerH; let lastTime = performance.now(); const SCROLL_SPEED = 70;
+                    function animateScroll(time) { const dt = (time - lastTime) / 1000; lastTime = time; currentY -= SCROLL_SPEED * dt; creditsList.style.top = `${currentY}px`; if (currentY < -totalContentH) { if (isAutoPlaying) dismiss(); return; } if (!overlay.classList.contains('dismissing')) animFrameId = requestAnimationFrame(animateScroll); }
+                    animFrameId = requestAnimationFrame(animateScroll);
+                }, headerDelay * 1000);
+                displayDuration = headerDelay + ((containerH + (hmParticipants.length * 140)) / 70) + 2;
+            }
+            let canDismissHM = false; const HM_SKIP_DELAY = 3000;
+            const hmHintEl = document.getElementById('hm-hint'); hmHintEl.style.opacity = '0.3'; hmHintEl.innerText = '3...';
+            const hmCountdownStart = Date.now();
+            const hmCountdownTimer = setInterval(() => { const remaining = Math.ceil((HM_SKIP_DELAY - (Date.now() - hmCountdownStart)) / 1000); if (remaining > 0) { hmHintEl.innerText = `${remaining}...`; } else { clearInterval(hmCountdownTimer); canDismissHM = true; hmHintEl.innerText = 'Нажмите SPACE для продолжения'; hmHintEl.style.opacity = '1'; } }, 200);
+            let resolved = false;
+            const dismiss = () => { if (!canDismissHM || resolved) return; resolved = true; clearInterval(hmCountdownTimer); if (animFrameId) cancelAnimationFrame(animFrameId); document.removeEventListener('keydown', keyHandler); overlay.classList.add('dismissing'); setTimeout(() => { overlay.classList.remove('active', 'dismissing'); resolve(); }, 1000); };
+            const keyHandler = (e) => { if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') { e.preventDefault(); dismiss(); } };
+            document.addEventListener('keydown', keyHandler);
+            if (isAutoPlaying) setTimeout(() => { canDismissHM = true; dismiss(); }, Math.max(displayDuration * 1000, HM_SKIP_DELAY + 500));
+        });
+    }
+
+    const _INVIS_RE = /^[\s\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\ufeff\u00ad]*$/;
+    function _hasVisibleName(s) { return s && !_INVIS_RE.test(s); }
+
+    function init() {
+        const _isValid = p => p && p.participant_id && _hasVisibleName(p.nickname);
+        const cleanFrozen = frozenBoard.filter(_isValid); const cleanFinal = finalBoard.filter(_isValid);
+        frozenBoard.length = 0; cleanFrozen.forEach(p => frozenBoard.push(p));
+        finalBoard.length = 0; cleanFinal.forEach(p => finalBoard.push(p));
+
+        const finalMap = {}; finalBoard.forEach(p => finalMap[p.participant_id] = p);
+        const frozenIds = new Set(frozenBoard.map(p => p.participant_id));
+        finalBoard.forEach(p => { if (!frozenIds.has(p.participant_id)) { const ep = JSON.parse(JSON.stringify(p)); ep.total_score = 0; ep.total_penalty = 0; ep.solved_count = 0; ep.scores = {}; frozenBoard.push(ep); } });
+
+        teams = frozenBoard.map(fp => {
+            const finalP = finalMap[fp.participant_id]; const processedScores = {}; const pendingQueue = [];
+            taskIds.forEach(tid => {
+                const sKey = String(tid);
+                const fData = fp.scores[sKey] || {score:0, attempts:0, passed:false, penalty:0, last_attempt_time:0};
+                const finalData = finalP ? (finalP.scores[sKey] || {score:0, attempts:0, passed:false, penalty:0, last_attempt_time:0}) : fData;
+                let isPending = false;
+                if (scoringType === 'icpc') {
+                    if (!fData.passed && finalData.passed) { isPending = true; pendingQueue.push({ tid: sKey, finalState: finalData }); }
+                    else if (!fData.passed && !finalData.passed && finalData.attempts > fData.attempts) { isPending = true; pendingQueue.push({ tid: sKey, finalState: finalData }); }
+                    else if (!fData.passed && fData.attempts > 0 && (fData.last_attempt_time || 0) === 0 && (finalData.attempts !== fData.attempts || finalData.passed !== fData.passed || finalData.score !== fData.score)) { isPending = true; pendingQueue.push({ tid: sKey, finalState: finalData }); }
+                } else {
+                    if ((finalData.passed !== fData.passed) || (finalData.attempts > fData.attempts) || (finalData.score !== fData.score)) { isPending = true; pendingQueue.push({ tid: sKey, finalState: finalData }); }
+                }
+                let totalSubmissions = finalData.attempts + (finalData.passed ? 1 : 0);
+                if (isPending && totalSubmissions < 1) totalSubmissions = 1;
+                // frozenAttempts = visible attempts before freeze (for pending cell display)
+                const frozenAttempts = fData.attempts || 0;
+                // frozenLastTime = last attempt time visible before freeze
+                const frozenLastTime = fData.last_attempt_time || 0;
+                processedScores[sKey] = { ...fData, frozenScore: fData.score, frozenPassed: fData.passed || false, frozenPenalty: fData.penalty || 0, isPending, displayAttempts: totalSubmissions, frozenAttempts, frozenLastTime, finalData };
+            });
+            return { id: fp.participant_id, nickname: fp.nickname, org: fp.organization, total_score: Number((scoringType === 'icpc') ? (fp.solved_count || 0) : fp.total_score) || 0, total_penalty: Number(fp.total_penalty) || 0, scores: processedScores, pendingQueue, isFinalized: false, currentIdx: 0 };
+        });
+
+        teams.sort((a, b) => { if (a.total_score !== b.total_score) return b.total_score - a.total_score; return a.total_penalty - b.total_penalty; });
+        teams.forEach((t, i) => { t.currentIdx = i; });
+        buildInitialDOM();
+        document.getElementById('status-display').innerText = "READY";
+    }
+
+    function buildInitialDOM() {
+        const container = document.getElementById('resolver-body'); container.innerHTML = '';
+        container.style.height = `${teams.length * ROW_STEP}px`;
+        teams.forEach(team => {
+            const row = document.createElement('div'); row.className = 'team-row'; row.id = `row-${team.id}`;
+            const dRank = document.createElement('div'); dRank.className = 'col-rank'; row.appendChild(dRank);
+            const dName = document.createElement('div'); dName.className = 'col-name'; row.appendChild(dName);
+            const dSolved = document.createElement('div'); dSolved.className = 'col-stats col-solved'; row.appendChild(dSolved);
+            const dPenalty = document.createElement('div'); dPenalty.className = 'col-stats col-penalty'; row.appendChild(dPenalty);
+            const probLine = document.createElement('div'); probLine.className = 'team-prob-line';
+            taskIds.forEach(() => { const dp = document.createElement('div'); dp.className = 'col-prob'; probLine.appendChild(dp); });
+            row.appendChild(probLine); container.appendChild(row);
+        });
+        teams.forEach(team => {
+            const tr = document.getElementById(`row-${team.id}`);
+            tr.style.top = `${team.currentIdx * ROW_STEP}px`;
+            tr.children[0].innerHTML = `<span class="rank-badge">${team.currentIdx + 1}</span>`;
+            tr.children[1].innerHTML = formatTeamName(team);
+            tr.children[2].innerText = team.total_score; tr.children[2].style.color = '#0dcaf0';
+            tr.children[3].innerText = team.total_penalty; tr.children[3].style.color = '#aaa';
+            taskIds.forEach(tid => updateTaskCell(team, tid, false));
+        });
+    }
+
+    function sortTeamsArray() { teams.sort((a, b) => { if (a.total_score !== b.total_score) return b.total_score - a.total_score; return a.total_penalty - b.total_penalty; }); teams.forEach((t, i) => t.currentIdx = i); }
+    const taskLetters = taskIds.map((_, i) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i] || String(i + 1));
+
+    function updateTaskCell(team, tid, showAnimation) {
+        const tr = document.getElementById(`row-${team.id}`); if (!tr) return;
+        const probLine = tr.children[4]; const tidIdx = taskIds.indexOf(tid);
+        if (tidIdx < 0 || !probLine || !probLine.children[tidIdx]) return;
+        const tdProb = probLine.children[tidIdx]; const s = team.scores[tid]; if (!s) return;
+        const isFirstSolver = firstSolves[tid] && String(firstSolves[tid]) === String(team.id);
+        if (s.isPending) {
+            const pendN = s.displayAttempts || 1;
+            const olympiadIdStr = {{ olympiad_id | tojson }};
+            const isCF = olympiadIdStr && olympiadIdStr.startsWith('CF');
+            if (isCF) {
+                const pendT = (s.finalData && s.finalData.last_attempt_time) ? s.finalData.last_attempt_time : '?';
+                tdProb.className = 'col-prob cell-pending'; tdProb.innerHTML = `${pendN}-${pendT}`;
+            } else {
+                tdProb.className = 'col-prob cell-pending'; tdProb.innerHTML = `${pendN}-?`;
+            }
+        } else if (s.passed) {
+            const ftsClass = isFirstSolver ? ' cell-fts' : '';
+            if (showAnimation) { tdProb.className = 'col-prob anim-ok'; requestAnimationFrame(() => { tdProb.classList.add('cell-ok'); if (isFirstSolver) tdProb.classList.add('cell-fts'); }); } else { tdProb.className = `col-prob cell-ok${ftsClass}`; }
+            if (scoringType === 'icpc') { const total = s.attempts + 1; const solveTime = s.last_attempt_time || 0; tdProb.innerHTML = `${total}-${solveTime}`; } else { tdProb.innerHTML = `${s.score || 100}`; }
+        } else if (s.score > 0 && scoringType !== 'icpc') {
+            if (showAnimation) { tdProb.className = 'col-prob anim-wa'; requestAnimationFrame(() => tdProb.classList.add('cell-partial')); } else { tdProb.className = 'col-prob cell-partial'; }
+            tdProb.innerHTML = `${s.score}`;
+        } else if (s.attempts > 0) {
+            if (showAnimation) { tdProb.className = 'col-prob anim-wa'; requestAnimationFrame(() => tdProb.classList.add('cell-wa')); } else { tdProb.className = 'col-prob cell-wa'; }
+            // WA cell: show same data as was in pending — only color changed
+            if (scoringType === 'icpc') {
+                const waT = s.last_attempt_time ? s.last_attempt_time : '?';
+                const waN = s.finalData ? s.finalData.attempts : s.attempts;
+                tdProb.innerHTML = `${waN}-${waT}`;
+            } else { tdProb.innerHTML = '0'; }
+        } else { tdProb.className = 'col-prob cell-neutral'; tdProb.innerHTML = taskLetters[tidIdx] || ''; }
+    }
+
+    function updateScoreVisuals(team) { const tr = document.getElementById(`row-${team.id}`); if (!tr) return; tr.children[2].innerText = team.total_score; tr.children[3].innerText = team.total_penalty; }
+
+    function updateVisuals(animatingTeamId = null, didClimb = false) {
+        teams.forEach(team => {
+            const tr = document.getElementById(`row-${team.id}`); if (!tr) return;
+            const rankBadge = tr.querySelector('.rank-badge'); if (rankBadge) rankBadge.innerText = team.currentIdx + 1;
+            if (team.id === currentFocusId) tr.classList.add('active-reveal-row'); else tr.classList.remove('active-reveal-row', 'row-anim-ok', 'row-anim-wa');
+            if (team.isFinalized && medalRecipients[team.id]) { tr.classList.add(`medal-${medalRecipients[team.id].type}`); tr.children[2].style.color = ''; tr.children[3].style.color = ''; }
+            tr.style.transform = `translateY(${team.currentIdx * ROW_STEP - parseInt(tr.style.top || 0, 10)}px)`;
+        });
+        if (animatingTeamId && didClimb) { const tr = document.getElementById(`row-${animatingTeamId}`); if (tr) { tr.classList.add('climbing'); if (tr.climbTimeout) clearTimeout(tr.climbTimeout); tr.climbTimeout = setTimeout(() => tr.classList.remove('climbing'), 2000); } }
+    }
+
+    function scrollToTeam(id) { const el = document.getElementById(`row-${id}`); if (el) { const rect = el.getBoundingClientRect(); window.scrollTo({top: window.pageYOffset + rect.top - window.innerHeight / 2 + 30, behavior: 'smooth'}); } }
+
+    async function stepForward() {
+        if (!revealStarted || isAnimationRunning || isNominationVisible) return;
+        isAnimationRunning = true; saveStateSnapshot();
+
+        if (!currentFocusId) {
+            for (let i = teams.length - 1; i >= 0; i--) {
+                if (!teams[i].isFinalized) { if (!_hasVisibleName(teams[i].nickname)) { teams[i].isFinalized = true; continue; } currentFocusId = teams[i].id; break; }
+            }
+            if (!currentFocusId) { document.getElementById('status-display').innerText = "CONTEST FINISHED"; if (isAutoPlaying) toggleAuto(); isAnimationRunning = false; return; }
+            if (!honorableMentionShown) { const allNonMedalistsFinalized = teams.every(t => medalRecipients[t.id] || t.isFinalized); if (allNonMedalistsFinalized) { honorableMentionShown = true; await showHonorableMention(); } }
+            updateVisuals(); scrollToTeam(currentFocusId); playSound('tick');
+            await sleep(isAutoPlaying ? 150 : 300); isAnimationRunning = false; return;
+        }
+
+        const team = teams.find(t => t.id === currentFocusId);
+        if (!team || !_hasVisibleName(team.nickname)) { if (team) team.isFinalized = true; currentFocusId = null; isAnimationRunning = false; return; }
+
+        if (team.pendingQueue.length > 0) {
+            const task = team.pendingQueue.shift(); const tid = task.tid; const finalData = task.finalState; const scoreObj = team.scores[tid];
+            
+            const tr = document.getElementById(`row-${team.id}`);
+            const tidIdx = taskIds.indexOf(tid);
+            const probLine = tr.querySelector('.team-prob-line');
+            let tdProb = null;
+            if (probLine && probLine.children[tidIdx]) {
+                tdProb = probLine.children[tidIdx];
+                tdProb.classList.add('cell-highlighting');
+            }
+            document.getElementById('status-display').innerText = `RESOLVING P-${taskLetters[tidIdx]}...`;
+            playSound('tick');
+
+            const suspenseDelay = isAutoPlaying ? Math.min(pulseDurationMs, 600) : pulseDurationMs;
+            await sleep(suspenseDelay);
+
+            if (tdProb) {
+                tdProb.classList.remove('cell-highlighting');
+            }
+
+            scoreObj.isPending = false; scoreObj.attempts = finalData.attempts; scoreObj.passed = finalData.passed; scoreObj.score = finalData.score; scoreObj.penalty = finalData.penalty || 0; scoreObj.last_attempt_time = finalData.last_attempt_time || 0;
+            const oldIdx = team.currentIdx; let didClimb = false;
+
+            if (scoreObj.passed) {
+                document.getElementById('status-display').innerText = "ACCEPTED"; document.getElementById('status-display').style.color = "#0f0"; playSound('ok');
+                tr.classList.remove('row-anim-ok', 'row-anim-wa'); void tr.offsetWidth; tr.classList.add('row-anim-ok');
+                if (scoringType === 'icpc') { if (!scoreObj.frozenPassed) { team.total_score += 1; team.total_penalty += Math.round(Number(scoreObj.penalty) || 0); } }
+                else { team.total_score += (scoreObj.score || 0) - (scoreObj.frozenScore || 0); team.total_penalty += (Number(scoreObj.penalty) || 0) - (Number(scoreObj.frozenPenalty) || 0); }
+                sortTeamsArray(); didClimb = team.currentIdx < oldIdx;
+                updateTaskCell(team, tid, true); updateScoreVisuals(team);
+                if (didClimb) { await sleep(isAutoPlaying ? 600 : 1200); updateVisuals(team.id, didClimb); currentFocusId = null; document.getElementById('status-display').innerText = "CLIMBED UP!"; }
+                else { updateVisuals(team.id, didClimb); }
+                if (firstSolves[tid] && String(firstSolves[tid]) === String(team.id)) { await sleep(isAutoPlaying ? 400 : 800); const ftsLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; await showNomination({ type: 'first_solve', taskLetter: ftsLetters[taskIds.indexOf(tid)], nickname: team.nickname, org: team.org }); }
+                await sleep(isAutoPlaying ? 250 : 400);
+            } else {
+                document.getElementById('status-display').innerText = "REJECTED"; document.getElementById('status-display').style.color = "#f00"; playSound('wa');
+                tr.classList.remove('row-anim-ok', 'row-anim-wa'); void tr.offsetWidth; tr.classList.add('row-anim-wa');
+                if (scoringType !== 'icpc') { team.total_score += (scoreObj.score || 0) - (scoreObj.frozenScore || 0); team.total_penalty += (Number(scoreObj.penalty) || 0) - (Number(scoreObj.frozenPenalty) || 0); sortTeamsArray(); updateScoreVisuals(team); }
+                updateTaskCell(team, tid, true); updateVisuals(); await sleep(isAutoPlaying ? 150 : 300);
+            }
+            document.getElementById('status-display').style.color = "#fff";
+        } else {
+            team.isFinalized = true; currentFocusId = null; updateVisuals();
+            const medalInfo = medalRecipients[team.id]; const teamFTS = getTeamFirstSolves(team.id); const teamCustomNoms = getCustomNominationsForTeam(team.id);
+            if (medalInfo) { await showNomination({ type: 'medal', medal: medalInfo.type, rank: medalInfo.rank, nickname: team.nickname, org: team.org, firstSolves: teamFTS, keepOverlay: teamCustomNoms.length > 0 }); }
+            else if (teamFTS.length > 0) { await showNomination({ type: 'special_award', nickname: team.nickname, org: team.org, firstSolves: teamFTS, keepOverlay: teamCustomNoms.length > 0 }); }
+            for (let i = 0; i < teamCustomNoms.length; i++) { await sleep(isAutoPlaying ? 100 : 200); await showNomination({ type: 'custom', nomTitle: teamCustomNoms[i].title, nickname: team.nickname, org: team.org, keepOverlay: i < teamCustomNoms.length - 1 }); }
+        }
+        isAnimationRunning = false;
+    }
+
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+    function playFanfare() { beep(523, 300, 'sine'); setTimeout(() => beep(659, 300, 'sine'), 100); setTimeout(() => beep(784, 300, 'sine'), 200); setTimeout(() => beep(1047, 500, 'sine'), 300); }
+    function playStarChime() { beep(800, 100, 'sine'); setTimeout(() => beep(1000, 100, 'sine'), 100); setTimeout(() => beep(1200, 200, 'sine'), 200); }
+    function getTeamFirstSolves(teamId) { const results = []; const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; for (const [tid, pid] of Object.entries(firstSolves)) { if (String(pid) === String(teamId)) { const idx = taskIds.indexOf(String(tid)); if (idx >= 0) results.push(letters[idx]); } } return results.sort(); }
+
+    function showNomination(data) {
+        return new Promise(async (resolve) => {
+            const overlay = document.getElementById('nomination-overlay'); const nomContent = document.getElementById('nom-content');
+            const placeEl = document.getElementById('nom-place'); const medalEl = document.getElementById('nom-medal-text');
+            const nameEl = document.getElementById('nom-name'); const orgEl = document.getElementById('nom-org');
+            const specialEl = document.getElementById('nom-special'); const dividerEl = document.getElementById('nom-divider');
+            const hintEl = document.getElementById('nom-hint');
+
+            function setupContent() {
+                placeEl.className = 'nom-place'; medalEl.className = 'nom-medal-text';
+                if (data.type === 'medal') {
+                    const colorClass = data.medal === 'gold' ? 'nom-gold' : data.medal === 'silver' ? 'nom-silver' : 'nom-bronze';
+                    const medalText = data.medal === 'gold' ? '🥇 GOLD MEDAL' : data.medal === 'silver' ? '🥈 SILVER MEDAL' : '🥉 BRONZE MEDAL';
+                    const suffixes = {1:'st', 2:'nd', 3:'rd'}; const suffix = suffixes[data.rank] || 'th';
+                    placeEl.className = `nom-place ${colorClass}`; placeEl.innerText = `${data.rank}${suffix} Place`;
+                    medalEl.className = `nom-medal-text ${colorClass}`; medalEl.innerText = medalText;
+                    const medalColor = data.medal === 'gold' ? '#FFD700' : data.medal === 'silver' ? '#C0C0C0' : '#CD7F32';
+                    dividerEl.style.background = `linear-gradient(90deg, transparent, ${medalColor}, transparent)`;
+                    nameEl.innerText = data.nickname; orgEl.innerText = data.org || ''; orgEl.style.color = medalColor;
+                    specialEl.innerHTML = (data.firstSolves && data.firstSolves.length > 0) ? data.firstSolves.map(l => `<div class="fts-line">★ First to Solve Problem ${l}</div>`).join('') : '';
+                    playFanfare();
+                } else if (data.type === 'first_solve') {
+                    placeEl.className = 'nom-place nom-fts'; placeEl.innerHTML = '★';
+                    medalEl.className = 'nom-medal-text nom-fts'; medalEl.innerText = 'FIRST TO SOLVE';
+                    dividerEl.style.background = 'linear-gradient(90deg, transparent, #00e5ff, transparent)';
+                    nameEl.innerText = data.nickname; orgEl.innerText = data.org || ''; orgEl.style.color = '#00e5ff';
+                    specialEl.innerHTML = `<div class="fts-line" style="font-size:1.8em; color:#00e5ff">Problem ${data.taskLetter}</div>`;
+                    playStarChime();
+                } else if (data.type === 'special_award') {
+                    placeEl.className = 'nom-place nom-fts'; placeEl.innerHTML = '★';
+                    medalEl.className = 'nom-medal-text nom-fts'; medalEl.innerText = 'SPECIAL AWARD';
+                    dividerEl.style.background = 'linear-gradient(90deg, transparent, #00e5ff, transparent)';
+                    nameEl.innerText = data.nickname; orgEl.innerText = data.org || ''; orgEl.style.color = '#00e5ff';
+                    specialEl.innerHTML = data.firstSolves.map(l => `<div class="fts-line">First to Solve Problem ${l}</div>`).join('');
+                    playStarChime();
+                } else if (data.type === 'custom') {
+                    placeEl.className = 'nom-place nom-custom'; placeEl.innerHTML = '🏆';
+                    medalEl.className = 'nom-medal-text nom-custom'; medalEl.innerText = data.nomTitle || 'SPECIAL NOMINATION';
+                    dividerEl.style.background = 'linear-gradient(90deg, transparent, #ff6ec7, transparent)';
+                    nameEl.innerText = data.nickname; orgEl.innerText = data.org || ''; orgEl.style.color = '#ff6ec7';
+                    specialEl.innerHTML = data.extra || ''; playFanfare();
+                }
+            }
+
+            const isAlreadyVisible = overlay.classList.contains('active');
+            if (isAlreadyVisible) { nomContent.classList.add('fading'); hintEl.style.opacity = '0'; await sleep(500); setupContent(); nomContent.classList.remove('fading'); } else { setupContent(); overlay.classList.add('active'); }
+            isNominationVisible = true;
+
+            let canDismiss = false; const SKIP_DELAY = 3000;
+            hintEl.style.opacity = '0.3'; hintEl.innerText = '3...';
+            const countdownStart = Date.now();
+            const countdownTimer = setInterval(() => { const remaining = Math.ceil((SKIP_DELAY - (Date.now() - countdownStart)) / 1000); if (remaining > 0) { hintEl.innerText = `${remaining}...`; hintEl.style.opacity = '0.3'; } else { clearInterval(countdownTimer); canDismiss = true; hintEl.innerText = 'Нажмите SPACE для продолжения'; hintEl.style.opacity = '1'; } }, 200);
+
+            let resolved = false;
+            const dismiss = () => { if (!canDismiss || resolved) return; resolved = true; clearInterval(countdownTimer); if (data.keepOverlay) { isNominationVisible = false; document.removeEventListener('keydown', keyHandler); resolve(); } else { overlay.classList.remove('active'); isNominationVisible = false; document.removeEventListener('keydown', keyHandler); resolve(); } };
+            const keyHandler = (e) => { if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') { e.preventDefault(); dismiss(); } };
+            document.addEventListener('keydown', keyHandler);
+            if (isAutoPlaying) setTimeout(() => { canDismiss = true; dismiss(); }, Math.max(4500, SKIP_DELAY + 500));
+        });
+    }
+
+    function toggleAuto() {
+        if (!revealStarted) return;
+        const btn = document.getElementById('auto-play-btn');
+        if (isAutoPlaying) { isAutoPlaying = false; clearInterval(autoPlayInterval); document.getElementById('status-display').innerText = "PAUSED"; btn.innerText = "Auto Play"; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-light'); }
+        else { isAutoPlaying = true; btn.innerText = "Stop Auto"; btn.classList.remove('btn-outline-light'); btn.classList.add('btn-success'); try { stepForward(); } catch(err) { console.error(err); } autoPlayInterval = setInterval(() => { if (!isAnimationRunning) { try { stepForward(); } catch(err) { console.error(err); clearInterval(autoPlayInterval); isAutoPlaying = false; } } }, 120); }
+    }
+
+    let _spaceHeld = false, _spaceRepeatTimer = null;
+    function _startSpaceHold() { if (_spaceHeld) return; _spaceHeld = true; if (!isAutoPlaying) stepForward(); _spaceRepeatTimer = setInterval(() => { if (!_spaceHeld || isAutoPlaying) { clearInterval(_spaceRepeatTimer); _spaceRepeatTimer = null; return; } if (!isAnimationRunning) stepForward(); }, 100); }
+    function _stopSpaceHold() { _spaceHeld = false; if (_spaceRepeatTimer) { clearInterval(_spaceRepeatTimer); _spaceRepeatTimer = null; } }
+
+    document.addEventListener('keydown', (e) => {
+        const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') { e.preventDefault(); if (!revealStarted) return; if (!isAutoPlaying) _startSpaceHold(); }
+        else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') { e.preventDefault(); if (!revealStarted) return; if (!isAutoPlaying) stepBackward(); }
+        else if (e.code === 'KeyH') { toggleControls(); }
+    });
+    document.addEventListener('keyup', (e) => { if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') _stopSpaceHold(); });
+    window.addEventListener('blur', _stopSpaceHold);
+
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,611 @@
+{% extends "base.html" %}
+
+{% block title %}Импорт с Codeforces — Synaqmaker Resolver{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-cloud-arrow-down"></i> Импорт олимпиады с Codeforces</h2>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> {{ t('back') }}
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form id="cf-form" onsubmit="return false;">
+                    <div class="mb-3">
+                        <label for="cf-contest-id" class="form-label fw-bold">
+                            <i class="bi bi-hash"></i> Contest ID
+                        </label>
+                        <input type="number" class="form-control" id="cf-contest-id" 
+                               placeholder="Например: 1234" min="1" required>
+                        <div class="form-text">
+                            Числовой ID контеста с Codeforces. Можно найти в URL: 
+                            <code>codeforces.com/contest/<strong>1234</strong></code>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="cf-freeze-minutes" class="form-label fw-bold">
+                            <i class="bi bi-snow"></i> Время заморозки (минуты до конца)
+                        </label>
+                        <input type="number" class="form-control" id="cf-freeze-minutes" 
+                               value="60" min="0" max="600" required>
+                        <div class="form-text">
+                            За сколько минут до конца контеста замораживается таблица. 
+                            Стандартное значение — <strong>60 минут</strong>.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <a class="text-decoration-none small" data-bs-toggle="collapse" href="#cf-api-keys" role="button">
+                            <i class="bi bi-key"></i> API-ключи (опционально) <i class="bi bi-chevron-down"></i>
+                        </a>
+                        <div class="collapse mt-2" id="cf-api-keys">
+                            <div class="card card-body bg-light">
+                                <div class="mb-2">
+                                    <label for="cf-api-key" class="form-label small">API Key</label>
+                                    <input type="text" class="form-control form-control-sm" id="cf-api-key" 
+                                           placeholder="Из настроек Codeforces">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="cf-api-secret" class="form-label small">API Secret</label>
+                                    <input type="password" class="form-control form-control-sm" id="cf-api-secret" 
+                                           placeholder="Секретный ключ">
+                                </div>
+                                <small class="text-muted">
+                                    Ключи можно получить на 
+                                    <a href="https://codeforces.com/settings/api" target="_blank">codeforces.com/settings/api</a>.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-primary" id="btn-fetch" onclick="fetchContest()">
+                        <i class="bi bi-search"></i> Загрузить данные
+                    </button>
+                </form>
+
+                <div id="fetch-spinner" class="text-center py-4" style="display: none;">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="mt-2 text-muted">Загрузка данных с Codeforces...</div>
+                    <small class="text-muted">Для больших контестов это может занять 10-30 секунд</small>
+                </div>
+
+                <div id="fetch-error" class="alert alert-danger mt-3" style="display: none;"></div>
+
+                <div id="preview-section" style="display: none;">
+                    <hr>
+                    <h4 class="mb-3"><i class="bi bi-eye"></i> Предпросмотр контеста</h4>
+
+                    <div class="card border-primary mb-3">
+                        <div class="card-header bg-primary bg-opacity-10">
+                            <strong><i class="bi bi-trophy"></i> <span id="preview-name"></span></strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-auto">
+                                    <span class="badge bg-info fs-6">
+                                        <i class="bi bi-people"></i> Участников: <span id="preview-participants"></span>
+                                    </span>
+                                </div>
+                                <div class="col-auto">
+                                    <span class="badge bg-warning text-dark fs-6">
+                                        <i class="bi bi-card-checklist"></i> Задач: <span id="preview-problems"></span>
+                                    </span>
+                                </div>
+                                <div class="col-auto">
+                                    <span class="badge bg-secondary fs-6">
+                                        <i class="bi bi-clock"></i> <span id="preview-duration"></span>
+                                    </span>
+                                </div>
+                                <div class="col-auto">
+                                    <span class="badge fs-6" id="preview-scoring-badge">
+                                        <i class="bi bi-award"></i> <span id="preview-scoring"></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <h6><i class="bi bi-list-ol"></i> Задачи:</h6>
+                            <div id="preview-problems-list" class="mb-3"></div>
+
+                            <h6><i class="bi bi-people"></i> Участники:</h6>
+                            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Участник</th>
+                                            <th>Тип</th>
+                                            <th>Организация</th>
+                                            <th>Решено</th>
+                                            <th>Штраф</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="preview-participants-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <i class="bi bi-gear"></i> Настройки импорта
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="import-name" class="form-label">Название олимпиады</label>
+                                <input type="text" class="form-control" id="import-name">
+                            </div>
+                            <div class="mb-3">
+                                <label for="import-olympiad-id" class="form-label">ID олимпиады</label>
+                                <input type="text" class="form-control" id="import-olympiad-id" maxlength="8" readonly>
+                            </div>
+
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-funnel"></i> Тип участников</label>
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="checkbox" id="pt-contestant" value="CONTESTANT" checked onchange="onParticipantTypeChange()">
+                                    <label class="form-check-label" for="pt-contestant">
+                                        <i class="bi bi-person-check text-success"></i> Официальные (CONTESTANT)
+                                        <span class="badge bg-success ms-1" id="count-CONTESTANT">0</span>
+                                    </label>
+                                </div>
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="checkbox" id="pt-virtual" value="VIRTUAL" onchange="onParticipantTypeChange()">
+                                    <label class="form-check-label" for="pt-virtual">
+                                        <i class="bi bi-ghost text-info"></i> Виртуальные (VIRTUAL)
+                                        <span class="badge bg-info ms-1" id="count-VIRTUAL">0</span>
+                                    </label>
+                                </div>
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="checkbox" id="pt-out-of-competition" value="OUT_OF_COMPETITION" onchange="onParticipantTypeChange()">
+                                    <label class="form-check-label" for="pt-out-of-competition">
+                                        <i class="bi bi-person-dash text-warning"></i> Вне конкурса (OUT_OF_COMPETITION)
+                                        <span class="badge bg-warning text-dark ms-1" id="count-OUT_OF_COMPETITION">0</span>
+                                    </label>
+                                </div>
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="checkbox" id="pt-practice" value="PRACTICE" onchange="onParticipantTypeChange()">
+                                    <label class="form-check-label" for="pt-practice">
+                                        <i class="bi bi-pencil text-secondary"></i> Тренировка (PRACTICE)
+                                        <span class="badge bg-secondary ms-1" id="count-PRACTICE">0</span>
+                                    </label>
+                                </div>
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="checkbox" id="pt-manager" value="MANAGER" onchange="onParticipantTypeChange()">
+                                    <label class="form-check-label" for="pt-manager">
+                                        <i class="bi bi-gear text-dark"></i> Менеджер (MANAGER)
+                                        <span class="badge bg-dark ms-1" id="count-MANAGER">0</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="import-top-n" class="form-label fw-bold">
+                                    <i class="bi bi-sort-numeric-down"></i> Первые N участников
+                                </label>
+                                <input type="number" class="form-control" id="import-top-n" min="0" placeholder="Оставьте пустым для всех" onchange="onParticipantTypeChange()">
+                            </div>
+
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-people"></i> Участники для импорта</label>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="import-mode" 
+                                           id="import-mode-all" value="all" checked onchange="onImportModeChange()">
+                                    <label class="form-check-label" for="import-mode-all">Все участники</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="import-mode" 
+                                           id="import-mode-group" value="group" onchange="onImportModeChange()">
+                                    <label class="form-check-label" for="import-mode-group">Только указанные (группа)</label>
+                                </div>
+                            </div>
+                            <div id="group-handles-section" style="display: none;">
+                                <div class="mb-2">
+                                    <label for="group-handles" class="form-label">Список хендлов (по одному на строку)</label>
+                                    <textarea class="form-control font-monospace" id="group-handles" rows="6"
+                                              placeholder="tourist&#10;Petr&#10;ecnerwala"
+                                              oninput="onGroupHandlesInput()"></textarea>
+                                </div>
+                                <div id="group-match-info" class="small mb-2" style="display: none;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-success btn-lg" id="btn-import" onclick="doImport()">
+                            <i class="bi bi-download"></i> Импортировать и открыть разморозку
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                            <i class="bi bi-x-lg"></i> Отмена
+                        </button>
+                    </div>
+                </div>
+
+                <div id="import-spinner" class="text-center py-4" style="display: none;">
+                    <div class="spinner-border text-success" role="status"></div>
+                    <div class="mt-2 text-muted">Импорт данных...</div>
+                </div>
+
+                <div id="import-result" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-info-circle"></i> Как это работает
+            </div>
+            <div class="card-body small">
+                <ol>
+                    <li>Введите <strong>Contest ID</strong> — числовой идентификатор контеста</li>
+                    <li>Укажите <strong>время заморозки</strong></li>
+                    <li>Нажмите <strong>«Загрузить данные»</strong></li>
+                    <li>Проверьте предпросмотр и нажмите <strong>«Импортировать»</strong></li>
+                    <li>Откроется <strong>режим разморозки</strong>!</li>
+                </ol>
+                <hr>
+                <h6 class="fw-bold">Где найти Contest ID?</h6>
+                <code class="d-block bg-light p-2 rounded mb-2">
+                    codeforces.com/contest/<strong class="text-primary">1920</strong>
+                </code>
+                <hr>
+                <h6 class="fw-bold">Поддерживаемые форматы:</h6>
+                <ul class="mb-0">
+                    <li><i class="bi bi-check text-success"></i> ICPC (solved + penalty)</li>
+                    <li><i class="bi bi-check text-success"></i> Codeforces Rounds (баллы)</li>
+                    <li><i class="bi bi-check text-success"></i> Командные и индивидуальные</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <i class="bi bi-exclamation-triangle text-warning"></i> Ограничения
+            </div>
+            <div class="card-body small">
+                <ul class="mb-0">
+                    <li>Контест должен быть <strong>завершён</strong></li>
+                    <li>Доступны только <strong>публичные</strong> контесты (или API-ключи)</li>
+                    <li>Большие контесты (1000+) загружаются дольше</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let contestData = null;
+let _groupInputTimer = null;
+
+function onGroupHandlesInput() {
+    clearTimeout(_groupInputTimer);
+    _groupInputTimer = setTimeout(() => { if (contestData) showPreview(contestData); }, 300);
+}
+
+function onImportModeChange() {
+    const mode = document.querySelector('input[name="import-mode"]:checked').value;
+    document.getElementById('group-handles-section').style.display = (mode === 'group') ? '' : 'none';
+    if (contestData) showPreview(contestData);
+}
+
+function onParticipantTypeChange() { if (contestData) showPreview(contestData); }
+
+function getSelectedParticipantTypes() {
+    const types = [];
+    ['pt-contestant', 'pt-virtual', 'pt-out-of-competition', 'pt-practice', 'pt-manager'].forEach(id => {
+        const cb = document.getElementById(id);
+        if (cb && cb.checked) types.push(cb.value);
+    });
+    return types;
+}
+
+function getTopN() {
+    const val = document.getElementById('import-top-n')?.value;
+    if (val && parseInt(val) > 0) return parseInt(val);
+    return null;
+}
+
+function getGroupHandles() {
+    const mode = document.querySelector('input[name="import-mode"]:checked').value;
+    if (mode !== 'group') return null;
+    const text = document.getElementById('group-handles').value.trim();
+    if (!text) return null;
+    return text.split(/\n/).map(h => h.trim()).filter(h => h.length > 0);
+}
+
+async function fetchContest() {
+    const contestId = document.getElementById('cf-contest-id').value.trim();
+    if (!contestId) { alert('Введите Contest ID'); return; }
+
+    const freezeMinutes = document.getElementById('cf-freeze-minutes').value || 60;
+    const apiKey = document.getElementById('cf-api-key').value.trim();
+    const apiSecret = document.getElementById('cf-api-secret').value.trim();
+
+    document.getElementById('fetch-spinner').style.display = '';
+    document.getElementById('fetch-error').style.display = 'none';
+    document.getElementById('preview-section').style.display = 'none';
+    document.getElementById('import-result').style.display = 'none';
+    document.getElementById('btn-fetch').disabled = true;
+
+    try {
+        let rawStandings = null;
+        let useDirectJs = false;
+
+        let resp = await fetch('{{ url_for("codeforces_fetch") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                contest_id: parseInt(contestId),
+                freeze_minutes: parseInt(freezeMinutes),
+                api_key: apiKey || null,
+                api_secret: apiSecret || null
+            })
+        });
+        let data = await resp.json();
+        
+        // JS FALLBACK if Python backend hits 503 from Cloudflare
+        if (!resp.ok && data.error && (data.error.includes("503") || data.error.includes("Codeforces API вернул HTTP 503") || data.error.includes("Cloudflare"))) {
+            console.log("Backend blocked by CF 503. Attempting proxy fetch via browser...");
+            document.getElementById('fetch-spinner').innerHTML = '<div class="spinner-border text-warning" role="status"></div><div class="mt-2 text-warning">Бэкенд заблокирован Cloudflare. Пробуем получить данные через ваш браузер...</div>';
+            
+            try {
+                let cfUrl = `https://codeforces.com/api/contest.standings?contestId=${contestId}&showUnofficial=true`;
+                let cfResp = await fetch(cfUrl);
+                if(cfResp.ok) {
+                    let cfData = await cfResp.json();
+                    if(cfData.status === "OK") {
+                         rawStandings = cfData.result;
+                         useDirectJs = true;
+                         window._cfRawStandings = rawStandings; 
+                         
+                         // Resend to backend WITH raw data
+                         resp = await fetch('{{ url_for("codeforces_fetch") }}', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                contest_id: parseInt(contestId),
+                                freeze_minutes: parseInt(freezeMinutes),
+                                raw_standings: rawStandings
+                            })
+                         });
+                         data = await resp.json();
+                    }
+                }
+            } catch(e) {
+                console.error("Direct JS Fetch also failed", e);
+            }
+        }
+
+        if (!resp.ok || data.error) {
+            let errorText = data.error || 'Ошибка';
+            let escapeError = escapeHtml(errorText);
+            
+            if (errorText.includes('503') || errorText.includes('Cloudflare')) {
+                escapeError = `<div class="alert alert-danger mb-0 border-danger">
+                    <h5 class="alert-heading fw-bold"><i class="bi bi-shield-lock-fill"></i> Обязательная авторизация (Ошибка 503)</h5>
+                    <p>Сервер Codeforces <b>заблокировал анонимное скачивание</b> этой таблицы результатов (скорее всего, она слишком большая или включена защита).</p>
+                    <hr>
+                    <p class="mb-0"><b>Что делать:</b><br>Вам необходимо развернуть вкладку <b>«API-ключи (опционально)»</b> чуть выше и ввести ваши личные ключи от аккаунта Codeforces.</p>
+                    <p class="mt-2 small"><em>Вы можете сгенерировать <code>API Key</code> и <code>Secret</code> бесплатно в профиле на <a href="https://codeforces.com/settings/api" target="_blank" class="fw-bold">codeforces.com/settings/api</a>.</em></p>
+                </div>`;
+                
+                // Force open the API keys tab
+                let collapseEl = document.getElementById('cf-api-keys');
+                if (collapseEl && !collapseEl.classList.contains('show')) {
+                    if (window.bootstrap && bootstrap.Collapse) {
+                        try { new bootstrap.Collapse(collapseEl, { toggle: true }); } catch(e){}
+                    } else {
+                        collapseEl.classList.add('show');
+                    }
+                    collapseEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+            } else {
+                escapeError = '<i class="bi bi-exclamation-triangle"></i> ' + escapeError;
+            }
+            
+            document.getElementById('fetch-error').innerHTML = escapeError;
+            document.getElementById('fetch-error').style.display = '';
+            return;
+        }
+        contestData = data;
+        showPreview(data);
+    } catch(err) {
+        document.getElementById('fetch-error').innerHTML = '<i class="bi bi-wifi-off"></i> Ошибка сети: ' + escapeHtml(err.message);
+        document.getElementById('fetch-error').style.display = '';
+    } finally {
+        document.getElementById('fetch-spinner').innerHTML = '<div class="spinner-border text-primary" role="status"></div><div class="mt-2 text-muted">Загрузка данных с Codeforces...</div><small class="text-muted">Для больших контестов это может занять 10-30 секунд</small>';
+        document.getElementById('fetch-spinner').style.display = 'none';
+        document.getElementById('btn-fetch').disabled = false;
+    }
+}
+
+function showPreview(data) {
+    document.getElementById('preview-name').textContent = data.contest_name;
+    document.getElementById('preview-problems').textContent = data.problems_count;
+    document.getElementById('preview-duration').textContent = data.duration_display || '—';
+
+    const scoringBadge = document.getElementById('preview-scoring-badge');
+    const scoringText = document.getElementById('preview-scoring');
+    if (data.scoring_type === 'icpc') {
+        scoringBadge.className = 'badge bg-success fs-6';
+        scoringText.textContent = 'ICPC';
+    } else {
+        scoringBadge.className = 'badge bg-info fs-6';
+        scoringText.textContent = 'Баллы';
+    }
+
+    const probList = document.getElementById('preview-problems-list');
+    probList.innerHTML = '';
+    (data.problems || []).forEach(p => {
+        probList.innerHTML += `<span class="badge bg-light text-dark border me-1 mb-1">
+            <strong>${escapeHtml(p.index)}</strong>. ${escapeHtml(p.name)}</span>`;
+    });
+
+    const typeCounts = data.type_counts || {};
+    ['CONTESTANT', 'VIRTUAL', 'OUT_OF_COMPETITION', 'PRACTICE', 'MANAGER'].forEach(t => {
+        const el = document.getElementById('count-' + t);
+        if (el) el.textContent = typeCounts[t] || 0;
+    });
+
+    const selectedTypes = getSelectedParticipantTypes();
+    let allParticipants = data.all_participants || data.preview_participants || [];
+    let filteredParticipants = allParticipants;
+    if (selectedTypes.length > 0 && selectedTypes.length < 5) {
+        const typeSet = new Set(selectedTypes);
+        filteredParticipants = filteredParticipants.filter(p => typeSet.has(p.participant_type || 'CONTESTANT'));
+    }
+
+    const topN = getTopN();
+    if (topN && topN > 0 && filteredParticipants.length > topN) {
+        filteredParticipants = filteredParticipants.slice(0, topN);
+    }
+
+    const groupHandles = getGroupHandles();
+    const matchInfo = document.getElementById('group-match-info');
+    if (groupHandles && groupHandles.length > 0) {
+        const handlesLower = new Set(groupHandles.map(h => h.toLowerCase()));
+        filteredParticipants = filteredParticipants.filter(p => {
+            const nick = (p.nickname || '').toLowerCase();
+            const handle = (p.handle || '').toLowerCase();
+            return handlesLower.has(handle) || handlesLower.has(nick);
+        });
+        const notFound = groupHandles.filter(h => !filteredParticipants.some(p => 
+            (p.handle || '').toLowerCase() === h.toLowerCase() || (p.nickname || '').toLowerCase() === h.toLowerCase()
+        ));
+        let html = `<span class="text-success"><i class="bi bi-check-circle"></i> Найдено: <strong>${filteredParticipants.length}</strong> из ${groupHandles.length}</span>`;
+        if (notFound.length > 0) {
+            html += `<br><span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Не найдены: ${notFound.map(h => '<code>' + escapeHtml(h) + '</code>').join(', ')}</span>`;
+        }
+        matchInfo.innerHTML = html;
+        matchInfo.style.display = '';
+    } else {
+        if (matchInfo) { matchInfo.innerHTML = ''; matchInfo.style.display = 'none'; }
+    }
+
+    const totalCount = data.participants_count || allParticipants.length;
+    if (filteredParticipants.length !== totalCount) {
+        document.getElementById('preview-participants').innerHTML = `<span class="text-decoration-line-through text-muted">${totalCount}</span> → ${filteredParticipants.length}`;
+    } else {
+        document.getElementById('preview-participants').textContent = totalCount;
+    }
+
+    const typeBadge = (t) => {
+        const map = { 'CONTESTANT': ['bg-success', 'Офиц.'], 'VIRTUAL': ['bg-info', 'Призрак'], 'OUT_OF_COMPETITION': ['bg-warning text-dark', 'ВК'], 'PRACTICE': ['bg-secondary', 'Трен.'], 'MANAGER': ['bg-dark', 'Мен.'] };
+        const [cls, label] = map[t] || ['bg-light text-dark', t];
+        return `<span class="badge ${cls}">${label}</span>`;
+    };
+
+    const tbody = document.getElementById('preview-participants-body');
+    tbody.innerHTML = '';
+    filteredParticipants.slice(0, 20).forEach((p, i) => {
+        tbody.innerHTML += `<tr><td>${i + 1}</td><td><strong>${escapeHtml(p.nickname)}</strong></td><td>${typeBadge(p.participant_type || 'CONTESTANT')}</td><td class="text-muted">${escapeHtml(p.organization || '—')}</td><td><span class="badge bg-success">${p.total_score}</span></td><td>${p.total_penalty}</td></tr>`;
+    });
+    if (filteredParticipants.length > 20) {
+        tbody.innerHTML += `<tr><td colspan="6" class="text-center text-muted">...и ещё ${filteredParticipants.length - 20}</td></tr>`;
+    }
+
+    document.getElementById('import-name').value = data.contest_name;
+    document.getElementById('import-olympiad-id').value = data.olympiad_id;
+    document.getElementById('preview-section').style.display = '';
+}
+
+async function doImport() {
+    if (!contestData) return;
+    const btn = document.getElementById('btn-import');
+    btn.disabled = true;
+    document.getElementById('import-spinner').style.display = '';
+    document.getElementById('import-result').style.display = 'none';
+
+    const importName = document.getElementById('import-name').value.trim() || contestData.contest_name;
+    const groupHandles = getGroupHandles();
+    const participantTypes = getSelectedParticipantTypes();
+    const topN = getTopN();
+
+    try {
+        let payload = {
+            contest_id: contestData.contest_id,
+            freeze_minutes: contestData.freeze_minutes,
+            api_key: contestData.api_key || null,
+            api_secret: contestData.api_secret || null,
+            name: importName,
+            handles_filter: groupHandles,
+            participant_types: participantTypes.length > 0 ? participantTypes : null,
+            top_n: topN
+        };
+
+        if (window._cfRawStandings) {
+            document.getElementById('import-spinner').innerHTML = '<div class="spinner-border text-warning" role="status"></div><div class="mt-2 text-warning">Загрузка всех посылок с Codeforces (может занять время)...</div>';
+            
+            payload.raw_standings = window._cfRawStandings;
+            if (contestData.freeze_minutes > 0) {
+                try {
+                    let statusResp = await fetch(`https://codeforces.com/api/contest.status?contestId=${contestData.contest_id}`);
+                    if (statusResp.ok) {
+                        let statusData = await statusResp.json();
+                        if(statusData.status === "OK") {
+                            payload.raw_submissions = statusData.result;
+                        }
+                    }
+                } catch(e) {
+                    console.error("Failed to load subs fallback", e);
+                }
+            }
+            document.getElementById('import-spinner').innerHTML = '<div class="spinner-border text-success" role="status"></div><div class="mt-2 text-muted">Обработка и сохранение данных...</div>';
+        }
+
+        const resp = await fetch('{{ url_for("codeforces_do_import") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        const resultEl = document.getElementById('import-result');
+        if (resp.ok && data.ok) {
+            resultEl.innerHTML = `
+                <div class="alert alert-success mt-3">
+                    <h5><i class="bi bi-check-circle"></i> Контест успешно импортирован!</h5>
+                    <p class="mb-2"><strong>"${escapeHtml(data.name)}"</strong> — ${data.participants_count} участников, ${data.problems_count} задач.</p>
+                    <p class="mb-3">ID: <kbd>${escapeHtml(data.olympiad_id)}</kbd></p>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="/presentation/${encodeURIComponent(data.olympiad_id)}" class="btn btn-primary" target="_blank">
+                            <i class="bi bi-display"></i> Открыть разморозку
+                        </a>
+                        <a href="/groups/${encodeURIComponent(data.olympiad_id)}" class="btn btn-outline-info">
+                            <i class="bi bi-people"></i> Настроить группы
+                        </a>
+                        <a href="/" class="btn btn-outline-secondary">
+                            <i class="bi bi-house"></i> На главную
+                        </a>
+                        <a href="{{ url_for('codeforces_import_page') }}" class="btn btn-outline-info">
+                            <i class="bi bi-arrow-repeat"></i> Ещё импорт
+                        </a>
+                    </div>
+                </div>`;
+            document.getElementById('preview-section').style.display = 'none';
+        } else {
+            resultEl.innerHTML = `<div class="alert alert-danger mt-3"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(data.error || 'Ошибка')}</div>`;
+        }
+        resultEl.style.display = '';
+    } catch(err) {
+        document.getElementById('import-result').innerHTML = `<div class="alert alert-danger mt-3"><i class="bi bi-wifi-off"></i> Ошибка: ${escapeHtml(err.message)}</div>`;
+        document.getElementById('import-result').style.display = '';
+    } finally {
+        btn.disabled = false;
+        document.getElementById('import-spinner').style.display = 'none';
+    }
+}
+
+function resetForm() {
+    contestData = null;
+    document.getElementById('preview-section').style.display = 'none';
+    document.getElementById('import-result').style.display = 'none';
+    document.getElementById('fetch-error').style.display = 'none';
+    document.getElementById('cf-contest-id').value = '';
+}
+</script>
+{% endblock %}
