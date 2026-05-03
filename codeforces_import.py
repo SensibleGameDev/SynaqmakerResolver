@@ -301,6 +301,30 @@ def filter_scoreboard_by_handles(scoreboard, handles):
     return [p for p in scoreboard if _matches(p)]
 
 
+def filter_scoreboard_exclude_handles(scoreboard, handles):
+    if not handles:
+        return scoreboard
+    handles_lower = {h.strip().lower() for h in handles if h.strip()}
+    if not handles_lower:
+        return scoreboard
+
+    def _matches(participant):
+        h = participant.get('handle', '').lower()
+        n = participant.get('nickname', '').lower()
+        if h in handles_lower or n in handles_lower:
+            return True
+        if '=' in h:
+            after_eq = h.split('=', 1)[1]
+            if after_eq in handles_lower:
+                return True
+        for fh in handles_lower:
+            if '=' in fh and fh.split('=', 1)[1] == h:
+                return True
+        return False
+
+    return [p for p in scoreboard if not _matches(p)]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Построение скорбордов
 # ──────────────────────────────────────────────────────────────────────────────
@@ -616,7 +640,7 @@ def _compute_first_solves(rows, problems, problem_index_to_id, participant_uuids
             pr = pr_list[prob_idx]
             if pr.get('points', 0) > 0:
                 solve_time = pr.get('bestSubmissionTimeSeconds', 0)
-                if solve_time > 0 and solve_time < best_time:
+                if solve_time >= 0 and solve_time < best_time:
                     best_time = solve_time
                     p_key = _get_participant_key(row)
                     best_uuid = participant_uuids.get(p_key)
