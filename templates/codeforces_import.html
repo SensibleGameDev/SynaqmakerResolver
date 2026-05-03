@@ -122,11 +122,13 @@
                                             <th>Организация</th>
                                             <th>Решено</th>
                                             <th>Штраф</th>
+                                            <th></th>
                                         </tr>
                                     </thead>
                                     <tbody id="preview-participants-body"></tbody>
                                 </table>
                             </div>
+                            <div id="ignored-participants-container" class="mt-2"></div>
                         </div>
                     </div>
 
@@ -455,6 +457,17 @@ function showPreview(data) {
     const selectedTypes = getSelectedParticipantTypes();
     let allParticipants = data.all_participants || data.preview_participants || [];
     let filteredParticipants = allParticipants;
+    
+    // Ensure ignoredHandlesSet is initialized
+    if (!window.ignoredHandlesSet) window.ignoredHandlesSet = new Set();
+    
+    // Filter out ignored participants early
+    filteredParticipants = filteredParticipants.filter(p => {
+        let h = (p.handle || '').toLowerCase();
+        let n = (p.nickname || '').toLowerCase();
+        return !window.ignoredHandlesSet.has(h) && !window.ignoredHandlesSet.has(n);
+    });
+
     if (selectedTypes.length > 0 && selectedTypes.length < 5) {
         const typeSet = new Set(selectedTypes);
         filteredParticipants = filteredParticipants.filter(p => typeSet.has(p.participant_type || 'CONTESTANT'));
@@ -502,12 +515,23 @@ function showPreview(data) {
 
     const tbody = document.getElementById('preview-participants-body');
     tbody.innerHTML = '';
-    filteredParticipants.slice(0, 20).forEach((p, i) => {
-        tbody.innerHTML += `<tr><td>${i + 1}</td><td><strong>${escapeHtml(p.nickname)}</strong></td><td>${typeBadge(p.participant_type || 'CONTESTANT')}</td><td class="text-muted">${escapeHtml(p.organization || '—')}</td><td><span class="badge bg-success">${p.total_score}</span></td><td>${p.total_penalty}</td></tr>`;
+    filteredParticipants.slice(0, 50).forEach((p, i) => {
+        let handleToIgnore = (p.handle || p.nickname).replace(/'/g, "\\'");
+        let delBtn = `<button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="ignoreParticipant('${handleToIgnore}')" title="Удалить"><i class="bi bi-trash"></i></button>`;
+        tbody.innerHTML += `<tr><td>${i + 1}</td><td><strong>${escapeHtml(p.nickname)}</strong></td><td>${typeBadge(p.participant_type || 'CONTESTANT')}</td><td class="text-muted">${escapeHtml(p.organization || '—')}</td><td><span class="badge bg-success">${p.total_score}</span></td><td>${p.total_penalty}</td><td>${delBtn}</td></tr>`;
     });
-    if (filteredParticipants.length > 20) {
-        tbody.innerHTML += `<tr><td colspan="6" class="text-center text-muted">...и ещё ${filteredParticipants.length - 20}</td></tr>`;
+    if (filteredParticipants.length > 50) {
+        tbody.innerHTML += `<tr><td colspan="7" class="text-center text-muted">...и ещё ${filteredParticipants.length - 50}</td></tr>`;
     }
+
+    let ignoredHtml = '';
+    if (window.ignoredHandlesSet && window.ignoredHandlesSet.size > 0) {
+        let arr = Array.from(window.ignoredHandlesSet);
+        ignoredHtml = `<div class="mt-2 text-danger small">Удалённые из импорта: ` + 
+            arr.map(h => `<span class="badge bg-danger cursor-pointer" style="cursor: pointer;" onclick="restoreParticipant('${h.replace(/'/g, "\\'")}')" title="Вернуть">${escapeHtml(h)} &times;</span>`).join(' ') + 
+            `</div>`;
+    }
+    document.getElementById('ignored-participants-container').innerHTML = ignoredHtml;
 
     document.getElementById('import-name').value = data.contest_name;
     document.getElementById('import-olympiad-id').value = data.olympiad_id;
@@ -535,7 +559,8 @@ async function doImport() {
             name: importName,
             handles_filter: groupHandles,
             participant_types: participantTypes.length > 0 ? participantTypes : null,
-            top_n: topN
+            top_n: topN,
+            ignored_handles: (window.ignoredHandlesSet && window.ignoredHandlesSet.size > 0) ? Array.from(window.ignoredHandlesSet) : null
         };
 
         if (window._cfRawStandings) {
@@ -606,6 +631,20 @@ function resetForm() {
     document.getElementById('import-result').style.display = 'none';
     document.getElementById('fetch-error').style.display = 'none';
     document.getElementById('cf-contest-id').value = '';
+    window.ignoredHandlesSet = new Set();
+}
+
+function ignoreParticipant(handle) {
+    if (!window.ignoredHandlesSet) window.ignoredHandlesSet = new Set();
+    window.ignoredHandlesSet.add(handle.toLowerCase());
+    if (contestData) showPreview(contestData);
+}
+
+function restoreParticipant(handle) {
+    if (window.ignoredHandlesSet) {
+        window.ignoredHandlesSet.delete(handle.toLowerCase());
+        if (contestData) showPreview(contestData);
+    }
 }
 </script>
 {% endblock %}
