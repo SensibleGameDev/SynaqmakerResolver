@@ -677,7 +677,7 @@
                 updateTaskCell(team, tid, true); updateScoreVisuals(team);
                 if (didClimb) { await sleep(isAutoPlaying ? 600 : 1200); updateVisuals(team.id, didClimb); currentFocusId = null; document.getElementById('status-display').innerText = "CLIMBED UP!"; }
                 else { updateVisuals(team.id, didClimb); }
-                if (firstSolves[tid] && String(firstSolves[tid]) === String(team.id)) { await sleep(isAutoPlaying ? 400 : 800); const ftsLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; await showNomination({ type: 'first_solve', taskLetter: ftsLetters[taskIds.indexOf(tid)], nickname: team.nickname, org: team.org }); }
+                if (firstSolves[tid] && String(firstSolves[tid]) === String(team.id)) { await sleep(isAutoPlaying ? 400 : 800); await showNomination({ type: 'first_solve', taskLetter: taskLetters[taskIds.indexOf(tid)], nickname: team.nickname, org: team.org }); }
                 await sleep(isAutoPlaying ? 250 : 400);
             } else {
                 document.getElementById('status-display').innerText = "REJECTED"; document.getElementById('status-display').style.color = "#f00"; playSound('wa');
@@ -700,7 +700,7 @@
 
     function playFanfare() { beep(523, 300, 'sine'); setTimeout(() => beep(659, 300, 'sine'), 100); setTimeout(() => beep(784, 300, 'sine'), 200); setTimeout(() => beep(1047, 500, 'sine'), 300); }
     function playStarChime() { beep(800, 100, 'sine'); setTimeout(() => beep(1000, 100, 'sine'), 100); setTimeout(() => beep(1200, 200, 'sine'), 200); }
-    function getTeamFirstSolves(teamId) { const results = []; const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; for (const [tid, pid] of Object.entries(firstSolves)) { if (String(pid) === String(teamId)) { const idx = taskIds.indexOf(String(tid)); if (idx >= 0) results.push(letters[idx]); } } return results.sort(); }
+    function getTeamFirstSolves(teamId) { const results = []; for (const [tid, pid] of Object.entries(firstSolves)) { if (String(pid) === String(teamId)) { const idx = taskIds.indexOf(String(tid)); if (idx >= 0) results.push(taskLetters[idx]); } } return results.sort(); }
 
     function showNomination(data) {
         return new Promise(async (resolve) => {
