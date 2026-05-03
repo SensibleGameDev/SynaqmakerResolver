@@ -415,6 +415,14 @@ def codeforces_do_import():
             kept_ids = {p['participant_id'] for p in final_scoreboard}
             first_solves = {k: v for k, v in first_solves.items() if v in kept_ids}
 
+        ignored_handles = data.get('ignored_handles') or None
+        if ignored_handles and isinstance(ignored_handles, list):
+            from codeforces_import import filter_scoreboard_exclude_handles
+            frozen_scoreboard = filter_scoreboard_exclude_handles(frozen_scoreboard, ignored_handles)
+            final_scoreboard = filter_scoreboard_exclude_handles(final_scoreboard, ignored_handles)
+            kept_ids = {p['participant_id'] for p in final_scoreboard}
+            first_solves = {k: v for k, v in first_solves.items() if v in kept_ids}
+
         # Normalize ICPC scores
         if scoring_type == 'icpc':
             for board in [frozen_scoreboard, final_scoreboard]:
@@ -482,7 +490,7 @@ def json_import_upload():
         tasks = json_data.get('tasks', [])
         name = json_data.get('name', json_data.get('contest_name', f'Contest {olympiad_id}'))
         scoring_type = json_data.get('scoring_type', 'icpc')
-        first_solves = json_data.get('first_solves', {})
+        first_solves = json_data.get('first_solves') or json_data.get('first_to_solve') or json_data.get('first-to-solve') or {}
 
         if not isinstance(olympiad_id, str) or len(olympiad_id) < 1:
             return jsonify({'error': 'Неверный olympiad_id'}), 400
@@ -520,6 +528,27 @@ def json_import_upload():
                                     s['last_attempt_time'] = calc_time if calc_time >= 0 else 0
                                 else:
                                     s['last_attempt_time'] = 0
+
+        # Auto-compute first_solves if not provided
+        if not first_solves:
+            best_times = {}
+            for p in final:
+                if p.get('disqualified'):
+                    continue
+                pid = p.get('participant_id')
+                for tid, s in p.get('scores', {}).items():
+                    if isinstance(s, dict) and s.get('passed'):
+                        stime = s.get('last_attempt_time', 0)
+                        try:
+                            stime = float(stime)
+                        except (ValueError, TypeError):
+                            stime = 0
+                            
+                        # We consider >= 0 time because 0 minutes is a valid solve time
+                        if stime >= 0:
+                            if tid not in best_times or stime < best_times[tid]:
+                                best_times[tid] = stime
+                                first_solves[tid] = pid
 
         db.save_contest(olympiad_id, name, scoring_type, tasks, first_solves)
         db.save_frozen_scoreboard(olympiad_id, frozen, final, freeze_time)
